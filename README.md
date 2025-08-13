@@ -58,7 +58,7 @@ cd ../../../..
 # Build and test
 mkdir build && cd build
 source ../../sel4-dev-env/bin/activate
-../init-build.sh -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DAARCH64=1
+../init-build.sh -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DLibUSB=OFF
 ninja
 ./simulate
 ```
