@@ -26,6 +26,10 @@
   <!-- Custom vm_freertos project from your GitHub -->
   <project name="camkes-vm-freertos.git" path="projects/vm-examples/apps/Arm/vm_freertos" 
            remote="spanwich" revision="main" upstream="main" dest-branch="main"/>
+
+  <!-- FreeRTOS source for ARM Cortex-A9 vExpress platform -->
+  <project name="freertos_vexpress_a9.git" path="freertos_vexpress_a9" 
+           remote="spanwich" revision="main" upstream="main" dest-branch="main"/>
   
   <!-- VM Images and Linux -->
   <project name="camkes-vm-images.git" path="projects/camkes-vm-images" revision="bafad64282c14d0bbf15468bfd6265e648d87d6c" upstream="master" dest-branch="master"/>
