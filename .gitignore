@@ -1,0 +1,42 @@
+# seL4/CAmkES repo-managed directories (managed by repo tool)
+camkes-vm-examples/
+FreeRTOS-Kernel/
+.repo/
+
+# Build artifacts and cache
+.sel4_cache/
+build/
+build_debug/
+
+# Temporary files
+*.tmp
+*.log
+*.aux
+*.out
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+*.toc
+
+# Archives and compressed files
+*.tar.gz
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python virtual environment
+sel4-dev-env/
+
+# FreeRTOS build artifacts
+freertos_vexpress_a9/
+
+# VM manifest
+vm_freertos_manifest/
