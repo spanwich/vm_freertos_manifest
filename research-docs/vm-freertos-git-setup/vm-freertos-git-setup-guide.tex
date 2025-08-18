@@ -1,0 +1,498 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+
+% Code listing configuration
+\lstset{
+    basicstyle=\ttfamily\small,
+    commentstyle=\color{gray},
+    keywordstyle=\color{blue},
+    stringstyle=\color{red},
+    showstringspaces=false,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    backgroundcolor=\color{gray!10}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{vm\_freertos Git Setup Guide}
+\lfoot{PhD Research Documentation}
+\rfoot{\thepage}
+
+\title{Setting Up vm\_freertos as a Git Subproject: \\
+Multiple Strategies for Research Code Management}
+
+\author{PhD Research Documentation}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document provides comprehensive guidance for setting up your custom vm\_freertos implementation as a git-managed subproject within the CAmkES VM examples framework. Multiple strategies are presented, including git submodules, subtrees, and independent repositories, with recommendations based on different research workflow requirements.
+\end{abstract}
+
+\section{Overview of Strategies}
+
+\subsection{Strategy Comparison}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|p{3cm}|p{3cm}|p{3cm}|}
+\hline
+\textbf{Strategy} & \textbf{Pros} & \textbf{Cons} & \textbf{Best For} \\
+\hline
+Git Submodule & 
+\begin{itemize}
+\item Independent versioning
+\item Clean separation
+\item Easy sharing
+\end{itemize} & 
+\begin{itemize}
+\item Complex workflows
+\item Requires discipline
+\item Learning curve
+\end{itemize} & 
+\begin{itemize}
+\item Collaborative research
+\item Publication code
+\item Long-term projects
+\end{itemize} \\
+\hline
+Git Subtree & 
+\begin{itemize}
+\item Simpler workflows
+\item Single clone
+\item No .gitmodules
+\end{itemize} & 
+\begin{itemize}
+\item Merge complexity
+\item History pollution
+\item Less flexible
+\end{itemize} & 
+\begin{itemize}
+\item Personal projects
+\item Rapid development
+\item Simple integration
+\end{itemize} \\
+\hline
+Independent Repo & 
+\begin{itemize}
+\item Full independence
+\item Custom workflows
+\item Easy backup
+\end{itemize} & 
+\begin{itemize}
+\item Manual sync
+\item No integration
+\item Isolation overhead
+\end{itemize} & 
+\begin{itemize}
+\item Experimental work
+\item Backup strategy
+\item Portfolio projects
+\end{itemize} \\
+\hline
+\end{tabular}
+\caption{Git Strategy Comparison}
+\end{table}
+
+\section{Option 1: Git Submodule (Recommended for Research)}
+
+Git submodules allow you to keep your vm\_freertos as a separate repository while linking it into the main project.
+
+\subsection{Setup Process}
+
+\begin{lstlisting}[caption=Setting Up Git Submodule]
+# 1. Create and push your vm_freertos repository
+cd /path/to/your/vm_freertos
+git init
+git add -A
+git commit -m "Initial commit: FreeRTOS VM implementation"
+
+# Push to your remote repository (GitHub, GitLab, etc.)
+git remote add origin <your-remote-url>
+git branch -M main  # Optional: use 'main' instead of 'master'
+git push -u origin main
+
+# 2. Remove local directory and add as submodule
+cd /home/konton-otome/phd/camkes-vm-examples
+rm -rf projects/vm-examples/apps/Arm/vm_freertos
+
+# 3. Add as submodule
+git submodule add <your-remote-url> projects/vm-examples/apps/Arm/vm_freertos
+
+# 4. Commit the submodule configuration
+git add .gitmodules projects/vm-examples/apps/Arm/vm_freertos
+git commit -m "Add vm_freertos as submodule"
+\end{lstlisting}
+
+\subsection{Daily Workflow}
+
+\begin{lstlisting}[caption=Working with Submodules]
+# Updating your vm_freertos code
+cd projects/vm-examples/apps/Arm/vm_freertos
+# Make your changes
+git add -A
+git commit -m "Your changes"
+git push
+
+# Update parent repository to point to new commit
+cd /home/konton-otome/phd/camkes-vm-examples
+git add projects/vm-examples/apps/Arm/vm_freertos
+git commit -m "Update vm_freertos submodule"
+
+# Cloning project with submodules (for collaborators)
+git clone --recursive <main-repo-url>
+# OR
+git clone <main-repo-url>
+git submodule update --init --recursive
+\end{lstlisting}
+
+\subsection{Benefits for Research}
+
+\begin{itemize}
+\item \textbf{Independent Versioning}: Your research code has its own git history
+\item \textbf{Easy Sharing}: Others can use just your vm\_freertos without the full CAmkES setup
+\item \textbf{Publication Ready}: Clean, standalone code for paper submissions
+\item \textbf{Backup Strategy}: Your code is safely stored in its own repository
+\item \textbf{Branching}: Easy to experiment with different approaches
+\end{itemize}
+
+\section{Option 2: Git Subtree (Simpler Workflow)}
+
+Git subtrees merge your subproject into the main repository while maintaining the ability to push/pull from the original.
+
+\subsection{Setup Process}
+
+\begin{lstlisting}[caption=Setting Up Git Subtree]
+# 1. Create your remote vm_freertos repository first
+# (Same as step 1 in submodule setup)
+
+# 2. Remove local directory
+cd /home/konton-otome/phd/camkes-vm-examples
+rm -rf projects/vm-examples/apps/Arm/vm_freertos
+
+# 3. Add as subtree
+git subtree add --prefix=projects/vm-examples/apps/Arm/vm_freertos \
+    <your-remote-url> main --squash
+
+# The --squash option keeps history clean
+\end{lstlisting}
+
+\subsection{Daily Workflow}
+
+\begin{lstlisting}[caption=Working with Subtrees]
+# Make changes in vm_freertos directory
+cd projects/vm-examples/apps/Arm/vm_freertos
+# Edit files...
+
+# Commit to main repository
+cd /home/konton-otome/phd/camkes-vm-examples
+git add projects/vm-examples/apps/Arm/vm_freertos
+git commit -m "Update vm_freertos implementation"
+
+# Push changes to vm_freertos repository
+git subtree push --prefix=projects/vm-examples/apps/Arm/vm_freertos \
+    <your-remote-url> main
+
+# Pull updates from vm_freertos repository
+git subtree pull --prefix=projects/vm-examples/apps/Arm/vm_freertos \
+    <your-remote-url> main --squash
+\end{lstlisting}
+
+\section{Option 3: Independent Repository with Symlinks}
+
+Keep vm\_freertos as a completely separate repository and link it into the CAmkES project.
+
+\subsection{Setup Process}
+
+\begin{lstlisting}[caption=Independent Repository Setup]
+# 1. Move vm_freertos to separate location
+mv /home/konton-otome/phd/camkes-vm-examples/projects/vm-examples/apps/Arm/vm_freertos \
+   /home/konton-otome/phd/vm_freertos
+
+# 2. Initialize git repository
+cd /home/konton-otome/phd/vm_freertos
+git init
+git add -A
+git commit -m "Initial commit: FreeRTOS VM implementation"
+git remote add origin <your-remote-url>
+git push -u origin main
+
+# 3. Create symlink in CAmkES project
+cd /home/konton-otome/phd/camkes-vm-examples/projects/vm-examples/apps/Arm
+ln -s /home/konton-otome/phd/vm_freertos vm_freertos
+
+# 4. Add symlink to gitignore in main project
+echo "projects/vm-examples/apps/Arm/vm_freertos" >> .gitignore
+\end{lstlisting}
+
+\subsection{Benefits}
+
+\begin{itemize}
+\item \textbf{Complete Independence}: No git integration complexity
+\item \textbf{Flexible Structure}: Organize your research code however you want
+\item \textbf{Easy Backup}: Simple to backup separately
+\item \textbf{Portfolio Building}: Standalone project for your GitHub profile
+\end{itemize}
+
+\section{Option 4: Repo-Managed Subproject (Advanced)}
+
+Integrate your vm\_freertos into the repo manifest system used by CAmkES.
+
+\subsection{Create Custom Manifest}
+
+\begin{lstlisting}[language=xml, caption=Custom Manifest (custom-manifest.xml)]
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <!-- Include the default CAmkES VM manifest -->
+  <include name="default.xml" />
+  
+  <!-- Add your custom vm_freertos project -->
+  <project name="vm_freertos" 
+           path="projects/vm-examples/apps/Arm/vm_freertos" 
+           remote="your-git-server"
+           revision="main" />
+</manifest>
+\end{lstlisting}
+
+\begin{lstlisting}[caption=Using Custom Manifest]
+# Initialize with your custom manifest
+repo init -u <your-manifest-repo> -m custom-manifest.xml
+repo sync
+
+# Now vm_freertos is managed by repo tool
+\end{lstlisting}
+
+\section{Recommendations by Use Case}
+
+\subsection{For Active PhD Research (Recommended)}
+
+\textbf{Use Git Submodule} because:
+\begin{itemize}
+\item Your research code remains independent and publishable
+\item Easy to share specific versions with collaborators
+\item Clean separation between your work and the framework
+\item Supports branching for different experiments
+\item Industry-standard approach for research codebases
+\end{itemize}
+
+\subsection{For Rapid Prototyping}
+
+\textbf{Use Independent Repository with Symlinks} because:
+\begin{itemize}
+\item Fastest to set up and modify
+\item No git complexity to learn
+\item Easy to reorganize as project evolves
+\item Simple backup and sharing
+\end{itemize}
+
+\subsection{For Collaborative Projects}
+
+\textbf{Use Git Subtree} because:
+\begin{itemize}
+\item Easier for collaborators to clone and build
+\item No submodule learning curve for team members
+\item Single repository simplifies CI/CD
+\item Good balance of independence and integration
+\end{itemize}
+
+\section{Implementation Steps}
+
+\subsection{Immediate Next Steps}
+
+Based on your current situation, here's what I recommend:
+
+\begin{enumerate}
+\item \textbf{Create GitHub Repository}: Create a new repository for vm\_freertos
+\item \textbf{Choose Strategy}: Pick git submodule for research independence
+\item \textbf{Set Up Submodule}: Follow the submodule setup process above
+\item \textbf{Test Build}: Verify that CAmkES still builds correctly
+\item \textbf{Document Workflow}: Create README with build and development instructions
+\end{enumerate}
+
+\subsection{Repository Structure}
+
+Your vm\_freertos repository should have this structure:
+
+\begin{lstlisting}[caption=Recommended Repository Structure]
+vm_freertos/
+├── README.md                    # Project documentation
+├── CMakeLists.txt              # Build configuration  
+├── vm_minimal.camkes           # CAmkES system definition
+├── settings.cmake              # Build settings
+├── qemu-arm-virt/             # Platform-specific files
+│   ├── devices.camkes         # Device configuration
+│   └── freertos_build/        # FreeRTOS source
+│       ├── minimal_main_virt.c
+│       ├── minimal_startup_virt.S
+│       ├── minimal_virt.ld
+│       └── minimal_virt.mk
+├── docs/                      # Research documentation
+│   ├── memory-layout.md       # Memory architecture notes
+│   ├── debugging-guide.md     # Common issues and solutions
+│   └── research-notes.md      # Your research observations
+└── .gitignore                 # Git ignore patterns
+\end{lstlisting}
+
+\section{Advanced Git Workflows}
+
+\subsection{Branching Strategy for Research}
+
+\begin{lstlisting}[caption=Research Branching Workflow]
+# Main development
+git checkout main
+
+# Create experiment branches
+git checkout -b experiment/memory-debugging
+git checkout -b experiment/performance-optimization
+git checkout -b experiment/security-features
+
+# Create paper-specific branches
+git checkout -b paper/vm-performance-analysis
+git checkout -b paper/security-evaluation
+
+# Tag important milestones
+git tag v1.0-initial-implementation
+git tag v1.1-paper-submission
+git tag v2.0-improved-performance
+\end{lstlisting}
+
+\subsection{Collaboration Workflow}
+
+\begin{lstlisting}[caption=Collaboration with Advisors/Peers]
+# Share specific experiments
+git checkout experiment/memory-debugging
+git push origin experiment/memory-debugging
+
+# Create pull requests for review
+# Advisors can review changes before merging
+
+# Maintain clean main branch
+git checkout main
+git merge --no-ff experiment/memory-debugging
+git tag v1.2-memory-debug-complete
+\end{lstlisting}
+
+\section{Documentation Strategy}
+
+\subsection{README Template}
+
+\begin{lstlisting}[caption=README.md Template]
+# FreeRTOS VM for seL4/CAmkES
+
+## Overview
+Custom FreeRTOS virtualization implementation for seL4 microkernel research.
+
+## Quick Start
+```bash
+# From camkes-vm-examples directory
+mkdir build && cd build
+source ../../sel4-dev-env/bin/activate
+../init-build.sh -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DAARCH64=1
+ninja
+./simulate
+```
+
+## Research Focus
+- Real-time OS virtualization
+- Memory isolation analysis  
+- Performance characterization
+- Security evaluation
+
+## Publications
+- [Paper 1]: "Performance Analysis of FreeRTOS on seL4"
+- [Paper 2]: "Security Evaluation of Microkernel Virtualization"
+
+## Citation
+If you use this code in your research, please cite:
+```
+@inproceedings{your2024freertos,
+  title={Your Paper Title},
+  author={Your Name},
+  booktitle={Conference Name},
+  year={2024}
+}
+```
+\end{lstlisting}
+
+\section{Backup and Recovery Strategy}
+
+\subsection{Multiple Remote Strategy}
+
+\begin{lstlisting}[caption=Multiple Backup Remotes]
+# Add multiple remotes for redundancy
+git remote add github git@github.com:username/vm_freertos.git
+git remote add gitlab git@gitlab.com:username/vm_freertos.git
+git remote add university git@git.university.edu:username/vm_freertos.git
+
+# Push to all remotes
+git push github main
+git push gitlab main  
+git push university main
+
+# Or create alias for pushing to all
+git config alias.pushall '!git push github main && git push gitlab main && git push university main'
+git pushall
+\end{lstlisting}
+
+\subsection{Research Archive Strategy}
+
+\begin{lstlisting}[caption=Creating Research Archives]
+# Create archives for paper submissions
+git archive --format=tar.gz --prefix=vm_freertos-v1.0/ v1.0 > vm_freertos-v1.0.tar.gz
+
+# Create clean code for sharing
+git checkout paper/performance-analysis
+git archive --format=zip --prefix=freertos-vm-code/ HEAD > paper-code.zip
+\end{lstlisting}
+
+\section{Integration with CAmkES Workflow}
+
+\subsection{Build System Integration}
+
+The submodule approach integrates seamlessly with the existing CAmkES build system:
+
+\begin{lstlisting}[caption=Build System Compatibility]
+# No changes needed to existing build commands
+cd camkes-vm-examples/build
+source ../../sel4-dev-env/bin/activate
+../init-build.sh -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DAARCH64=1
+ninja
+./simulate
+
+# Git operations work independently
+cd ../projects/vm-examples/apps/Arm/vm_freertos
+git status
+git commit -m "Latest research changes"
+git push
+\end{lstlisting}
+
+\section{Conclusion}
+
+Setting up vm\_freertos as a git-managed subproject provides significant benefits for research code management, collaboration, and publication. The git submodule approach offers the best balance of independence and integration for academic research workflows.
+
+Key benefits include:
+\begin{itemize}
+\item \textbf{Professional Code Management}: Industry-standard practices for research code
+\item \textbf{Collaboration Ready}: Easy sharing with advisors, peers, and reviewers
+\item \textbf{Publication Friendly}: Clean, standalone code for paper submissions
+\item \textbf{Experimental Flexibility}: Branching for different research directions
+\item \textbf{Backup Security}: Multiple remote repositories for safety
+\end{itemize}
+
+The investment in proper git setup will pay dividends throughout your PhD research and beyond.
+
+\end{document}

@@ -1,0 +1,253 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{colortbl}
+
+\geometry{margin=0.8in}
+
+\title{FreeRTOS on seL4: Failed vs. Successful Implementation\\
+       \large Quick Reference Comparison}
+\author{PhD Research Documentation}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Executive Summary}
+
+\textbf{Research Goal Achieved}: FreeRTOS successfully running on seL4 microkernel
+
+\textbf{Key Success Factor}: Systematic resolution of architectural incompatibilities through custom implementation rather than attempting to fix the existing broken \texttt{vm\_freertos} example.
+
+\section{Critical Differences Comparison}
+
+\begin{longtable}{@{}p{3cm}|p{5cm}|p{5cm}@{}}
+\toprule
+\textbf{Aspect} & \cellcolor{red!20}\textbf{Original vm\_freertos (FAILED)} & \cellcolor{green!20}\textbf{Our Implementation (SUCCESS)} \\
+\midrule
+\endhead
+
+\textbf{Architecture} & 
+Mixed ARM32/AArch64 causing execution conflicts &
+Consistent ARM32 (Cortex-A9) throughout \\
+\midrule
+
+\textbf{Memory Layout} & 
+\begin{itemize}
+\item Entry: 0x80000000
+\item VM Base: 0x40000000  
+\item \textcolor{red}{MISALIGNED}
+\end{itemize} &
+\begin{itemize}
+\item Entry: 0x40000000
+\item VM Base: 0x40000000
+\item \textcolor{green}{ALIGNED}
+\end{itemize} \\
+\midrule
+
+\textbf{UART Configuration} &
+\begin{itemize}
+\item Address: 0x10009000
+\item \textcolor{red}{Incorrect mapping}
+\item No console output
+\end{itemize} &
+\begin{itemize}
+\item Address: 0x9000000  
+\item \textcolor{green}{Correct PL011 mapping}
+\item Full console output working
+\end{itemize} \\
+\midrule
+
+\textbf{Binary Format} &
+ELF format - unsupported by seL4 VM loader &
+Raw binary format - fully supported \\
+\midrule
+
+\textbf{FreeRTOS Source} &
+Incomplete/missing components &
+Complete FreeRTOS source with proper configuration \\
+\midrule
+
+\textbf{Startup Code} &
+Missing proper CPU initialization &
+Complete ARM assembly startup with stack setup \\
+\midrule
+
+\textbf{Build System} &
+Incompatible toolchain configuration &
+Proper ARM cross-compilation with VFP support \\
+\midrule
+
+\textbf{Error Output} &
+\texttt{Pagefault @ PC: 0x200} &
+\texttt{FreeRTOS starting...} \\
+& Silent failure after pagefault &
+\texttt{Tasks will begin running...} \\
+\midrule
+
+\textbf{Functionality} &
+\textcolor{red}{Complete failure - no execution} &
+\textcolor{green}{Multiple tasks, UART output, scheduler running} \\
+
+\bottomrule
+\caption{Detailed Comparison of Failed vs. Successful Implementation}
+\end{longtable}
+
+\section{Root Cause Analysis}
+
+\subsection{CAmkES Configuration Template Analysis}
+
+\textbf{Critical Discovery}: The failure was fundamentally caused by CAmkES template system using incorrect configuration structures for FreeRTOS.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|p{4cm}|p{5cm}|p{5cm}|}
+\hline
+\textbf{Configuration} & \cellcolor{red!20}\textbf{Deprecated (FAILED)} & \cellcolor{green!20}\textbf{Modern (SUCCESS)} \\
+\hline
+Structure & \texttt{linux\_address\_config} & \texttt{vm\_address\_config} \\
+\hline
+Entry Point Calculation & 
+\texttt{ram\_base + 0x8000} & 
+\texttt{kernel\_entry\_addr} \\
+& (Linux kernel offset) & (Explicit address) \\
+\hline
+Hardcoded Assumptions & 
+Always adds 8KB offset & 
+Uses configured entry point \\
+\hline
+Result for FreeRTOS & 
+0x40000000 + 0x8000 = & 
+"kernel\_entry\_addr" : \\
+0x40008000 (WRONG) & "0x40000000" (CORRECT) \\
+\hline
+\end{tabular}
+\caption{CAmkES Configuration Template Comparison}
+\end{table}
+
+\textbf{Template Processing Logic}:
+\begin{enumerate}
+\item \textbf{Deprecated Path}: \texttt{linux\_address\_config} → Always adds Linux kernel offset (+0x8000)
+\item \textbf{Modern Path}: \texttt{vm\_address\_config} → Uses explicit \texttt{kernel\_entry\_addr} parameter
+\item \textbf{Priority Order}: Modern configuration overrides deprecated when both present
+\end{enumerate}
+
+\subsection{Why the Original vm\_freertos Failed}
+
+\begin{enumerate}
+\item \textbf{Configuration Template Issue}: Used deprecated \texttt{linux\_address\_config} with hardcoded Linux kernel offset (+0x8000)
+\item \textbf{Binary Format Issue}: seL4 VM loader switch statement missing \texttt{IMG\_ELF} case
+\item \textbf{Architecture Confusion}: Mixed ARM32/AArch64 components
+\item \textbf{Hardware Debug API Issue}: \texttt{-DHardwareDebugAPI=1} flag incompatible with QEMU emulation
+\item \textbf{UART Address Mismatch}: Wrong device mapping preventing any output
+\end{enumerate}
+
+\subsection{Why Our Implementation Succeeds}
+
+\begin{enumerate}
+\item \textbf{Modern Configuration Templates}: Uses \texttt{vm\_address\_config} with explicit \texttt{kernel\_entry\_addr = "0x40000000"}
+\item \textbf{QEMU-Compatible Build Flags}: Removed \texttt{-DHardwareDebugAPI=1} to prevent system hangs
+\item \textbf{Consistent Architecture}: ARM32 throughout entire stack
+\item \textbf{Proper Memory Alignment}: All components using 0x40000000 base address
+\item \textbf{Complete Integration}: Full FreeRTOS source with proper startup sequence and dependency resolution
+\item \textbf{Working UART}: Proper PL011 address mapping (0x9000000) enabling console output
+\end{enumerate}
+
+\section{Key Technical Discoveries}
+
+\subsection{CAmkES Configuration Template System}
+
+\textbf{Critical Finding}: The CAmkES VM framework has evolved from Linux-specific to general-purpose virtualization, but legacy configuration structures remain.
+
+\begin{description}
+\item[Modern Approach] \texttt{vm\_address\_config} with explicit \texttt{kernel\_entry\_addr} parameter
+\item[Legacy Approach] \texttt{linux\_address\_config} with hardcoded Linux kernel assumptions
+\item[Template Processing] File: \texttt{seL4VMParameters.template.c} - generates VM configuration at build time
+\item[Entry Point Logic] Modern: uses explicit address; Legacy: always adds +0x8000 offset
+\end{description}
+
+\textbf{Solution}: Switch to modern configuration structure:
+\begin{lstlisting}[language=C]
+vm0.vm_address_config = {
+    "ram_base" : "0x40000000",
+    "kernel_entry_addr" : "0x40000000"  // Explicit FreeRTOS entry
+};
+\end{lstlisting}
+
+\subsection{Hardware Debug API Incompatibility}
+
+\textbf{Critical Finding}: ARM hardware debug features are incompatible with QEMU emulation environment.
+
+\begin{description}
+\item[Problem] \texttt{-DHardwareDebugAPI=1} enables ARM debug architecture requiring DBGEN hardware signal
+\item[QEMU Limitation] DBGEN signal maintained LOW, causing debug initialization to hang
+\item[Symptoms] System stops after "Enabling debugging in secure user mode"
+\item[Solution] Remove hardware debug API flag for QEMU environments
+\end{description}
+
+\subsection{seL4 VM Loader Limitation}
+
+\textbf{Critical Finding}: The seL4 VM guest image loader function \texttt{load\_guest\_kernel\_image()} has incomplete ELF support:
+
+\begin{itemize}
+\item Can detect ELF format (\texttt{IMG\_ELF})
+\item Switch statement missing \texttt{IMG\_ELF} case handling
+\item Only supports \texttt{IMG\_BIN} and \texttt{IMG\_ZIMAGE}  
+\item Results in silent loading failure
+\end{itemize}
+
+\textbf{Solution}: Convert ELF to raw binary format using \texttt{arm-none-eabi-objcopy -O binary}
+
+\subsection{Memory Layout Requirements}
+
+seL4 VM framework requires precise memory layout alignment:
+\begin{itemize}
+\item Guest entry point must match VM memory base address
+\item UART device addresses must match seL4 VM configuration
+\item Stack initialization must be handled in guest startup code
+\end{itemize}
+
+\section{Reproduction Steps Summary}
+
+\begin{enumerate}
+\item \textbf{Environment}: Python virtual environment with seL4/CAmkES dependencies
+\item \textbf{FreeRTOS}: Clone complete source, configure for ARM Cortex-A9
+\item \textbf{Memory Layout}: Set linker script to 0x40000000 base address
+\item \textbf{UART}: Configure for PL011 at 0x9000000
+\item \textbf{Startup}: Implement proper ARM assembly initialization  
+\item \textbf{Build}: Cross-compile with ARM toolchain, convert to binary
+\item \textbf{Integration}: Update seL4 VM configuration, rebuild system
+\item \textbf{Test}: Run in QEMU ARM virt machine
+\end{enumerate}
+
+\section{Research Impact}
+
+This work demonstrates that:
+\begin{itemize}
+\item \textbf{FreeRTOS can successfully run on seL4} - Primary research objective achieved
+\item \textbf{Systematic debugging approach works} - Following user instructions vs. trying to fix broken examples
+\item \textbf{Architecture consistency is critical} - Mixed architectures cause subtle failures
+\item \textbf{seL4 VM framework has limitations} - Binary format support incomplete
+\item \textbf{Secure real-time systems are feasible} - Combining formal verification with real-time capabilities
+\end{itemize}
+
+\section{Files and Locations}
+
+\textbf{Our Successful Implementation}:
+\begin{itemize}
+\item \texttt{/home/konton-otome/phd/freertos\_vexpress\_a9/} - Custom FreeRTOS implementation
+\item \texttt{/home/konton-otome/phd/camkes-vm-examples/projects/vm-examples/apps/Arm/vm\_freertos/} - seL4 VM configuration
+\end{itemize}
+
+\textbf{Original Failed Implementation}:
+\begin{itemize}  
+\item \texttt{camkes-vm-examples/projects/vm-examples/apps/Arm/vm\_freertos/} - Broken example
+\end{itemize}
+
+\textbf{Key Result}: Our implementation works where the original failed due to systematic resolution of architectural incompatibilities and complete integration approach.
+
+\end{document}

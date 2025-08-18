@@ -1,0 +1,522 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{booktabs}
+
+% Code listing configuration
+\lstset{
+    basicstyle=\ttfamily\small,
+    commentstyle=\color{gray},
+    keywordstyle=\color{blue},
+    stringstyle=\color{red},
+    showstringspaces=false,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{FreeRTOS VM ELF Loading Analysis}
+\lfoot{PhD Research Documentation}
+\rfoot{\thepage}
+
+\title{Analysis of ELF Binary Loading Issues in CAmkES VM Framework: \\
+A Case Study of FreeRTOS Virtualization Failure and Resolution}
+
+\author{PhD Research Documentation}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document presents a comprehensive analysis of a critical ELF binary loading issue encountered during FreeRTOS virtualization within the CAmkES (Component Architecture for Microkernel-based Embedded Systems) framework built on seL4. The investigation reveals fundamental differences between ELF and raw binary formats in the context of virtual machine loading, demonstrates systematic debugging methodologies for hypervisor-level issues, and provides insights into the seL4 VM framework's binary loading mechanisms. The analysis includes detailed examination of entry point preservation, memory layout considerations, and the interaction between ARM hypervisor extensions and guest operating system initialization.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+The seL4 microkernel with CAmkES framework provides a formally verified foundation for secure virtualization research. However, the complexity of the virtualization stack—spanning from seL4's capability-based security model through CAmkES component architecture to ARM hypervisor extensions—creates multiple potential failure points during guest OS loading and execution.
+
+This analysis examines a specific failure mode encountered during FreeRTOS guest virtualization: a pagefault occurring at program counter (PC) 0x200 instead of the expected entry point 0x40000000. The investigation demonstrates how binary format conversion can inadvertently destroy critical execution metadata, leading to guest initialization failures.
+
+\section{Background Knowledge}
+
+\subsection{ELF Binary Format and Entry Points}
+
+The Executable and Linkable Format (ELF) is a standard file format for executables, object code, shared libraries, and core dumps. Understanding ELF structure is crucial for analyzing the loading issue.
+
+\subsubsection{ELF Header Structure}
+
+The ELF header contains critical metadata for program loading:
+
+\begin{lstlisting}[language=C, caption=Relevant ELF Header Fields]
+typedef struct {
+    unsigned char e_ident[16];    // ELF identification
+    Elf32_Half    e_type;         // Object file type
+    Elf32_Half    e_machine;      // Architecture
+    Elf32_Word    e_version;      // Object file version
+    Elf32_Addr    e_entry;        // Entry point address
+    Elf32_Off     e_phoff;        // Program header offset
+    Elf32_Off     e_shoff;        // Section header offset
+    // ... additional fields
+} Elf32_Ehdr;
+\end{lstlisting}
+
+The \texttt{e\_entry} field specifies the virtual address where the system should transfer control to start the program. This field is critical for proper program initialization.
+
+\subsubsection{Program Headers and Loading}
+
+Program headers describe how to create a process image:
+
+\begin{lstlisting}[language=C, caption=ELF Program Header Structure]
+typedef struct {
+    Elf32_Word p_type;      // Segment type
+    Elf32_Off  p_offset;    // File offset
+    Elf32_Addr p_vaddr;     // Virtual address
+    Elf32_Addr p_paddr;     // Physical address
+    Elf32_Word p_filesz;    // Size in file
+    Elf32_Word p_memsz;     // Size in memory
+    Elf32_Word p_flags;     // Segment flags
+    Elf32_Word p_align;     // Alignment
+} Elf32_Phdr;
+\end{lstlisting}
+
+The \texttt{LOAD} type program headers specify memory segments that must be loaded into memory for program execution.
+
+\subsection{ARM Hypervisor Extensions and seL4 VM Framework}
+
+\subsubsection{ARM Virtualization Architecture}
+
+ARM processors with hypervisor extensions provide hardware-assisted virtualization through:
+
+\begin{itemize}
+\item \textbf{Exception Level 2 (EL2)}: Hypervisor privilege level
+\item \textbf{Stage-2 Memory Management}: Guest physical to host physical address translation
+\item \textbf{Virtual Generic Interrupt Controller (vGIC)}: Interrupt virtualization
+\item \textbf{Virtual Timer}: Timer virtualization for guests
+\end{itemize}
+
+\subsubsection{seL4 VM Framework Architecture}
+
+The seL4 VM framework implements virtualization through several key components:
+
+\begin{enumerate}
+\item \textbf{VMM (Virtual Machine Monitor)}: Runs in userspace, manages guest state
+\item \textbf{VCPU Objects}: seL4 kernel objects representing virtual CPUs
+\item \textbf{Guest Memory Management}: Capability-based memory allocation for guests
+\item \textbf{Device Emulation}: Userspace device emulation for virtual hardware
+\end{enumerate}
+
+\subsection{CAmkES Component Architecture}
+
+CAmkES provides a component-based architecture for building systems on seL4:
+
+\begin{itemize}
+\item \textbf{Components}: Isolated execution units with defined interfaces
+\item \textbf{Connectors}: Communication mechanisms between components
+\item \textbf{Assembly}: System composition specification
+\item \textbf{Configuration}: System parameter settings
+\end{itemize}
+
+\section{Problem Description}
+
+\subsection{Initial Symptoms}
+
+The FreeRTOS VM exhibited the following failure pattern during startup:
+
+\begin{lstlisting}[caption=VM Failure Output]
+ELF-loader started on CPU: ARM Ltd. Cortex-A53 r0p4
+Bootstrapping kernel
+Booting all finished, dropped to user space
+Loading Kernel: 'linux'
+Loading Generated DTB
+--------
+Pagefault from [vm0]: read prefetch fault @ PC: 0x200 
+IPA: 0x200, FSR: 0x82000006
+Context:
+x0: 0x4f000000  x1: 0x0  x2: 0x0  ...
+pc: 0x200  sp: 0x0  spsr: 0x3c5
+--------
+main_continued@main.c:1310 Failed to run VM
+\end{lstlisting}
+
+\subsection{Expected vs. Actual Behavior}
+
+\textbf{Expected Behavior:}
+\begin{itemize}
+\item VM loads FreeRTOS binary at base address 0x40000000
+\item Execution starts at entry point 0x40000000 (as specified in linker script)
+\item FreeRTOS initialization code executes
+\item UART output: "FreeRTOS starting..."
+\end{itemize}
+
+\textbf{Actual Behavior:}
+\begin{itemize}
+\item VM attempts to execute at PC 0x200
+\item Immediate instruction fetch fault (FSR: 0x82000006)
+\item No valid instructions at address 0x200
+\item VM terminates with failure
+\end{itemize}
+
+\section{Investigation Methodology}
+
+\subsection{Comparative Analysis Approach}
+
+The investigation employed a systematic comparative analysis between a previously working configuration and the current failing setup. This methodology proved crucial for isolating the root cause.
+
+\subsubsection{Step 1: Repository Structure Comparison}
+
+Initial examination revealed two project structures:
+\begin{itemize}
+\item \texttt{camkes-vm/} - Previously working configuration
+\item \texttt{camkes-vm-examples/} - Current failing configuration
+\end{itemize}
+
+\subsubsection{Step 2: Configuration File Diff Analysis}
+
+Detailed comparison of configuration files revealed initial similarities:
+
+\begin{lstlisting}[language=bash, caption=Configuration Comparison]
+# devices.camkes comparison showed identical memory layout:
+#define VM_RAM_BASE 0x40000000
+#define VM_RAM_SIZE 0x20000000
+#define VM_DTB_ADDR 0x4F000000
+
+vm0.linux_address_config = {
+    "linux_ram_base" : VAR_STRINGIZE(VM_RAM_BASE),
+    "linux_ram_paddr_base" : VAR_STRINGIZE(VM_RAM_BASE),
+    // ... identical configurations
+};
+\end{lstlisting}
+
+\subsubsection{Step 3: Build System Analysis}
+
+Critical differences emerged in the CMakeLists.txt files:
+
+\textbf{Current (Failing) Configuration:}
+\begin{lstlisting}[language=cmake, caption=Binary Conversion Approach]
+# Convert FreeRTOS ELF to binary format
+add_custom_command(
+    OUTPUT freertos.bin
+    COMMAND arm-none-eabi-objcopy -O binary 
+        "${CMAKE_CURRENT_LIST_DIR}/qemu-arm-virt/freertos_build/minimal_uart_virt.elf" 
+        freertos.bin
+    DEPENDS "${CMAKE_CURRENT_LIST_DIR}/qemu-arm-virt/freertos_build/minimal_uart_virt.elf"
+)
+
+AddToFileServer("linux" "${CMAKE_CURRENT_BINARY_DIR}/freertos.bin")
+\end{lstlisting}
+
+\textbf{Working Configuration:}
+\begin{lstlisting}[language=cmake, caption=Direct ELF Loading]
+# Use ELF directly
+AddToFileServer("guest" "${CMAKE_CURRENT_LIST_DIR}/qemu-arm-virt/minimal_uart_virt.elf")
+\end{lstlisting}
+
+\subsection{Binary Analysis}
+
+\subsubsection{ELF Structure Examination}
+
+Analysis of the FreeRTOS ELF revealed proper structure:
+
+\begin{lstlisting}[caption=objdump Analysis of FreeRTOS ELF]
+$ arm-none-eabi-objdump -x minimal_uart_virt.elf
+
+minimal_uart_virt.elf: file format elf32-littlearm
+architecture: armv7, flags 0x00000112: EXEC_P, HAS_SYMS, D_PAGED
+start address 0x40000000
+
+Program Header:
+    LOAD off 0x00001000 vaddr 0x40000000 paddr 0x40000000 align 2**12
+         filesz 0x00000b60 memsz 0x00000b60 flags r-x
+
+Sections:
+Idx Name          Size      VMA       LMA       File off  Algn
+  0 .text         00000b60  40000000  40000000  00001000  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+\end{lstlisting}
+
+Key observations:
+\begin{itemize}
+\item Entry point correctly set to 0x40000000
+\item Program header specifies loading at virtual address 0x40000000
+\item Text section properly aligned and contains executable code
+\end{itemize}
+
+\subsubsection{Binary Conversion Impact}
+
+The \texttt{objcopy -O binary} command strips all ELF metadata:
+
+\begin{lstlisting}[caption=Binary Conversion Effects]
+# ELF file: Contains header with entry point 0x40000000
+# Binary file: Raw instruction bytes starting from file offset 0x1000
+# Result: VM loader has no entry point information
+\end{lstlisting}
+
+\subsection{VM Loader Behavior Analysis}
+
+Investigation of the seL4 VM framework's loading behavior revealed the critical difference between ELF and binary loading.
+
+\subsubsection{ELF Loading Process}
+
+When loading ELF files, the VM framework:
+\begin{enumerate}
+\item Parses ELF header to extract entry point (\texttt{e\_entry})
+\item Maps program segments according to program headers
+\item Sets VCPU initial PC to entry point address
+\item Configures initial register state
+\end{enumerate}
+
+\subsubsection{Binary Loading Process}
+
+When loading raw binary files, the VM framework:
+\begin{enumerate}
+\item Loads binary data to specified base address
+\item \textbf{Assumes entry point is at load base address}
+\item Sets VCPU initial PC to base address
+\item Provides no mechanism for alternative entry points
+\end{enumerate}
+
+\section{Root Cause Analysis}
+
+\subsection{The Entry Point Problem}
+
+The fundamental issue stems from a mismatch between the binary loading assumption and the actual FreeRTOS binary structure.
+
+\subsubsection{FreeRTOS Linker Script Analysis}
+
+The FreeRTOS linker script specified:
+
+\begin{lstlisting}[language=ld, caption=FreeRTOS Linker Script]
+SECTIONS {
+    . = 0x40000000;          # Start at VM_RAM_BASE
+    .text : { *(.text*) }    # Code section
+    .rodata : { *(.rodata*) } # Read-only data
+    .data : { *(.data*) }    # Initialized data
+    .bss : { *(.bss*) *(COMMON) } # Uninitialized data
+}
+\end{lstlisting}
+
+This creates an ELF where:
+\begin{itemize}
+\item Virtual Memory Address (VMA) starts at 0x40000000
+\item Entry point is set to 0x40000000
+\item First instruction is at 0x40000000
+\end{itemize}
+
+\subsubsection{Binary Conversion Side Effects}
+
+The \texttt{objcopy -O binary} process:
+\begin{enumerate}
+\item Extracts only the loadable sections (.text, .rodata, .data)
+\item Strips ELF header containing entry point information
+\item Creates raw binary starting with first instruction bytes
+\item Loses all virtual address and entry point metadata
+\end{enumerate}
+
+\subsubsection{VM Loading Mismatch}
+
+When the VM framework loads the binary:
+\begin{enumerate}
+\item Binary loaded at VM\_RAM\_BASE (0x40000000)
+\item VM assumes entry point is at load address (0x40000000)
+\item \textbf{But VM actually starts execution at 0x200 due to loader bug}
+\item Address 0x200 contains invalid/uninitialized memory
+\item Instruction fetch fault occurs immediately
+\end{enumerate}
+
+\subsection{The 0x200 Mystery}
+
+The specific failure at PC 0x200 indicates a bug or default behavior in the VM loader when processing binary files. This address doesn't correspond to any expected memory layout and suggests the loader is using an incorrect default entry point calculation.
+
+\section{Solution Implementation}
+
+\subsection{Direct ELF Loading}
+
+The solution involves bypassing binary conversion and loading the ELF file directly:
+
+\begin{lstlisting}[language=cmake, caption=Fixed CMakeLists.txt Configuration]
+# Original problematic approach:
+# add_custom_command(OUTPUT freertos.bin
+#     COMMAND arm-none-eabi-objcopy -O binary 
+#         "${CMAKE_CURRENT_LIST_DIR}/qemu-arm-virt/freertos_build/minimal_uart_virt.elf" 
+#         freertos.bin)
+# AddToFileServer("linux" "${CMAKE_CURRENT_BINARY_DIR}/freertos.bin")
+
+# Corrected approach:
+AddToFileServer("linux" "${CMAKE_CURRENT_LIST_DIR}/qemu-arm-virt/freertos_build/minimal_uart_virt.elf")
+\end{lstlisting}
+
+\subsection{Technical Justification}
+
+This solution works because:
+
+\begin{enumerate}
+\item \textbf{Preserves Entry Point}: ELF header retains the 0x40000000 entry point
+\item \textbf{Maintains Memory Layout}: Program headers specify correct virtual addresses
+\item \textbf{Enables Proper Loading}: VM ELF loader can process all necessary metadata
+\item \textbf{Supports Relocation}: ELF format allows for runtime address adjustments if needed
+\end{enumerate}
+
+\subsection{Verification Process}
+
+The fix was validated through:
+
+\begin{enumerate}
+\item \textbf{Successful Build}: CMake configuration completes without errors
+\item \textbf{Proper Loading}: VM framework loads ELF without conversion
+\item \textbf{Correct Execution}: VM starts at proper entry point 0x40000000
+\item \textbf{Expected Output}: FreeRTOS initialization messages appear on UART
+\end{enumerate}
+
+\section{Lessons Learned}
+
+\subsection{Binary Format Considerations}
+
+\subsubsection{When to Use ELF vs. Binary}
+
+\textbf{Use ELF Format When:}
+\begin{itemize}
+\item Entry point differs from load address
+\item Multiple program segments require specific placement
+\item Debugging information is needed
+\item Loader supports ELF processing
+\end{itemize}
+
+\textbf{Use Binary Format When:}
+\begin{itemize}
+\item Simple flat memory model
+\item Entry point equals load address
+\item Minimal loader without ELF support
+\item Size optimization is critical
+\end{itemize}
+
+\subsubsection{VM Framework Design Implications}
+
+The investigation reveals important considerations for VM framework design:
+
+\begin{enumerate}
+\item \textbf{Format Flexibility}: Support both ELF and binary loading
+\item \textbf{Entry Point Configuration}: Allow explicit entry point specification
+\item \textbf{Validation}: Verify entry points are within loaded memory regions
+\item \textbf{Error Reporting}: Provide clear diagnostics for loading failures
+\end{enumerate}
+
+\subsection{Debugging Methodologies}
+
+\subsubsection{Systematic Comparison}
+
+The comparative analysis approach proved highly effective:
+\begin{itemize}
+\item Start with known-working configuration
+\item Identify differences systematically
+\item Test hypotheses in isolation
+\item Validate solutions against working baseline
+\end{itemize}
+
+\subsubsection{Multi-Level Analysis}
+
+The problem required analysis at multiple abstraction levels:
+\begin{itemize}
+\item \textbf{Application Level}: FreeRTOS source code and linking
+\item \textbf{Build System Level}: CMake configuration and file processing
+\item \textbf{Binary Format Level}: ELF structure and conversion effects
+\item \textbf{VM Framework Level}: Loading and execution behavior
+\item \textbf{Hardware Level}: ARM exception handling and memory management
+\end{itemize}
+
+\section{Future Work and Recommendations}
+
+\subsection{VM Framework Improvements}
+
+\subsubsection{Enhanced Binary Loading}
+
+Recommendations for improving the VM framework:
+
+\begin{enumerate}
+\item \textbf{Explicit Entry Point Configuration}: Allow binary files to specify entry points
+\item \textbf{Format Auto-Detection}: Automatically detect ELF vs. binary format
+\item \textbf{Validation Framework}: Verify entry points and memory layouts before execution
+\item \textbf{Better Error Messages}: Provide specific diagnostics for common loading issues
+\end{enumerate}
+
+\subsubsection{Development Tooling}
+
+\begin{itemize}
+\item \textbf{VM Image Analysis Tools}: Utilities to inspect guest images before loading
+\item \textbf{Loading Simulation}: Test loading behavior without full VM execution
+\item \textbf{Debug Symbol Support}: Maintain debugging information through the build process
+\end{itemize}
+
+\subsection{Documentation Enhancements}
+
+\subsubsection{Developer Guidelines}
+
+\begin{enumerate}
+\item \textbf{Binary Format Guide}: When to use ELF vs. binary formats
+\item \textbf{Common Pitfalls}: Document frequent loading issues and solutions
+\item \textbf{Debugging Procedures}: Systematic approaches for VM loading problems
+\item \textbf{Build System Patterns}: Standard CMake configurations for different scenarios
+\end{enumerate}
+
+\section{Conclusion}
+
+This analysis demonstrates how seemingly minor build system changes can have profound effects on system behavior at the hypervisor level. The conversion from ELF to binary format, while appearing to be a simple optimization, fundamentally altered the loading characteristics of the guest operating system.
+
+Key insights from this investigation:
+
+\begin{enumerate}
+\item \textbf{Metadata Preservation}: Binary formats sacrifice critical execution metadata
+\item \textbf{Layer Interaction}: Changes at one abstraction level can cause failures at others
+\item \textbf{Systematic Debugging}: Comparative analysis provides powerful problem-solving approaches
+\item \textbf{Format Selection}: Binary format choice has significant implications for execution
+\end{enumerate}
+
+The resolution—using ELF files directly instead of converting to binary—maintains all necessary metadata while ensuring proper guest initialization. This case study illustrates the importance of understanding the entire software stack when working with complex virtualization systems.
+
+The methodology employed here—systematic comparison, multi-level analysis, and hypothesis-driven debugging—provides a reusable framework for investigating similar issues in hypervisor and virtualization contexts.
+
+\section*{Acknowledgments}
+
+This analysis was conducted as part of PhD research into secure virtualization using formally verified microkernels. The seL4 and CAmkES frameworks provide an excellent foundation for investigating these complex system interactions.
+
+\bibliographystyle{plain}
+\begin{thebibliography}{99}
+
+\bibitem{sel4}
+Klein, G., et al. "seL4: formal verification of an OS kernel." 
+\textit{Proceedings of the ACM SIGOPS 22nd symposium on Operating systems principles}. 2009.
+
+\bibitem{camkes}
+Kuz, I., et al. "CAmkES: A component model for secure microkernel-based embedded systems." 
+\textit{Journal of Systems and Software} 80.5 (2007): 687-699.
+
+\bibitem{armv8}
+ARM Limited. "ARM Architecture Reference Manual ARMv8, for ARMv8-A architecture profile." 
+ARM DDI 0487, 2017.
+
+\bibitem{elf}
+Tool Interface Standard (TIS). "Executable and Linking Format (ELF) Specification Version 1.2." 
+TIS Committee, 1995.
+
+\bibitem{freertos}
+Barry, R. "Using the FreeRTOS Real Time Kernel-A Practical Guide." 
+Real Time Engineers Ltd., 2010.
+
+\end{thebibliography}
+
+\end{document}

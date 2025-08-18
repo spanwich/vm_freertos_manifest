@@ -1,0 +1,710 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{booktabs}
+\usepackage{enumitem}
+
+% Code listing configuration
+\lstset{
+    basicstyle=\ttfamily\small,
+    commentstyle=\color{gray},
+    keywordstyle=\color{blue},
+    stringstyle=\color{red},
+    showstringspaces=false,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    backgroundcolor=\color{gray!10}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{CAmkES VM Framework Analysis}
+\lfoot{PhD Research Documentation}
+\rfoot{\thepage}
+
+\title{CAmkES VM Framework Architecture and AST Build System Analysis: \\
+Comprehensive Documentation and Problem Resolution}
+
+\author{PhD Research Documentation}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document provides a comprehensive analysis of the CAmkES VM (Component Architecture for Microkernel-based Embedded Systems Virtual Machine) framework, including its architecture, components, build system, and common configuration issues. The analysis includes investigation of AST (Abstract Syntax Tree) generation problems that prevent successful builds, their root causes, and resolution strategies. This documentation serves as both a technical reference for the CAmkES VM framework and a troubleshooting guide for common build system issues encountered in secure virtualization research.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+The CAmkES VM framework represents a sophisticated approach to secure virtualization built upon the formally verified seL4 microkernel. This framework enables researchers and developers to run guest operating systems, including Linux and real-time operating systems like FreeRTOS, within isolated virtual machines while maintaining the security guarantees provided by seL4's capability-based architecture.
+
+This analysis emerges from hands-on experience with CAmkES VM development, particularly focusing on FreeRTOS virtualization and the resolution of critical build system issues that can prevent successful project compilation and execution.
+
+\section{CAmkES VM Framework Architecture}
+
+\subsection{Core Components and Design Philosophy}
+
+The CAmkES VM framework implements a microkernel-based virtualization architecture that differs fundamentally from traditional hypervisor designs. Instead of a monolithic hypervisor running in privileged mode, the framework distributes virtualization functionality across multiple isolated components running in userspace.
+
+\subsubsection{Component-Based Architecture}
+
+The framework employs a component-based design where each functional unit is isolated:
+
+\begin{enumerate}
+\item \textbf{Virtual Machine Monitor (VMM)}: Userspace component responsible for guest state management
+\item \textbf{File Server}: Provides guest images and file system access
+\item \textbf{Device Emulation Components}: Handle virtual hardware interfaces
+\item \textbf{Inter-VM Communication Components}: Enable secure communication between VMs
+\item \textbf{Platform-Specific Components}: Handle hardware abstraction
+\end{enumerate}
+
+\subsubsection{seL4 Integration}
+
+The framework leverages several seL4-specific features:
+
+\begin{itemize}
+\item \textbf{VCPU Objects}: seL4 kernel objects representing virtual CPUs
+\item \textbf{Capability-Based Memory Management}: Secure memory allocation and sharing
+\item \textbf{IPC Endpoints}: Inter-component communication mechanisms
+\item \textbf{Notification Objects}: Event signaling between components
+\end{itemize}
+
+\subsection{Supported Platforms and Applications}
+
+\subsubsection{ARM Platform Support}
+
+The CAmkES VM framework provides comprehensive ARM platform support:
+
+\begin{description}
+\item[Development Platforms:] QEMU ARM Virt, Exynos 5422/5410, TK1, TX1, TX2, ZCU102
+\item[Architecture Support:] ARMv7 (32-bit) and ARMv8 (64-bit) with hypervisor extensions
+\item[SMP Support:] Multi-core configurations on supported platforms
+\end{description}
+
+\subsubsection{VM Application Types}
+
+The framework includes several pre-configured VM applications:
+
+\begin{description}
+\item[vm\_minimal:] Single Linux VM with basic virtualization features
+\item[vm\_cross\_connector:] Inter-component communication demonstration
+\item[vm\_multi:] Multiple VM configuration with shared resources
+\item[vm\_serial\_server:] Virtio console forwarding implementation
+\item[vm\_virtio\_net:] Virtual networking interface support
+\item[vm\_freertos:] Real-time OS virtualization (custom research application)
+\end{description}
+
+\subsubsection{x86 Platform Support}
+
+For x86 platforms, the framework provides:
+
+\begin{description}
+\item[minimal:] Basic x86 VM configuration
+\item[optiplex9020:] Complex multi-VM setup with hardware passthrough
+\item[cma34cr\_centos:] Enterprise-grade configuration examples
+\end{description}
+
+\subsection{Virtualization Features}
+
+\subsubsection{Hardware Virtualization Support}
+
+The framework leverages hardware virtualization extensions:
+
+\begin{itemize}
+\item \textbf{ARM Hypervisor Extensions}: EL2 privilege level, Stage-2 MMU, vGIC
+\item \textbf{Intel VT-x/AMD-V}: Hardware-assisted virtualization on x86
+\item \textbf{IOMMU Support}: Device isolation and DMA protection
+\end{itemize}
+
+\subsubsection{Virtual Hardware Interfaces}
+
+Standard virtual hardware is provided through virtio drivers:
+
+\begin{itemize}
+\item \textbf{Virtio Console}: Serial communication interface
+\item \textbf{Virtio Network}: Virtual network interface cards
+\item \textbf{Virtio Block}: Virtual block devices for storage
+\item \textbf{Virtio PCI}: PCI bus virtualization
+\end{itemize}
+
+\section{Build System Architecture}
+
+\subsection{Repository Management}
+
+The CAmkES VM framework uses Google's repo tool for managing multiple Git repositories:
+
+\begin{lstlisting}[caption=Repository Initialization]
+repo init -u https://github.com/seL4/camkes-vm-manifest.git
+repo sync
+\end{lstlisting}
+
+This approach allows for coordinated development across multiple related projects while maintaining independent versioning for each component.
+
+\subsection{CMake Build Configuration}
+
+\subsubsection{Multi-Level Configuration System}
+
+The build system employs a hierarchical configuration approach:
+
+\begin{enumerate}
+\item \textbf{Top-Level Configuration}: Platform and application selection
+\item \textbf{Application-Level Configuration}: VM-specific settings
+\item \textbf{Component-Level Configuration}: Individual component parameters
+\item \textbf{Platform-Level Configuration}: Hardware-specific adaptations
+\end{enumerate}
+
+\subsubsection{Key Configuration Variables}
+
+Critical build variables include:
+
+\begin{lstlisting}[language=cmake, caption=Build Configuration Variables]
+# Platform selection
+-DPLATFORM=qemu-arm-virt
+-DCAMKES_VM_APP=vm_freertos
+
+# Architecture configuration
+-DAARCH64=1  # 64-bit ARM
+-DAARCH32=1  # 32-bit ARM
+
+# Simulation settings
+-DSIMULATION=1
+\end{lstlisting}
+
+\subsection{CAmkES Integration}
+
+\subsubsection{Component Assembly Description Language}
+
+CAmkES uses a domain-specific language for system description:
+
+\begin{lstlisting}[caption=CAmkES Component Definition]
+component VM {
+    control;
+    uses FileServerInterface fs;
+    has semaphore vm_sem;
+    consumes HaveNotification notification_ready;
+    emits HaveNotification notification_ready_connector;
+    
+    attribute int num_vcpus = 1;
+    attribute {
+        string linux_name = "linux";
+        string linux_bootcmdline = "";
+        string linux_stdout = "/pl011@9000000";
+    } linux_image_config;
+}
+\end{lstlisting}
+
+\subsubsection{System Assembly}
+
+System composition is defined through assembly specifications:
+
+\begin{lstlisting}[caption=System Assembly]
+assembly {
+    composition {
+        VM_GENERAL_COMPOSITION_DEF()
+        VM_COMPOSITION_DEF(0)
+        connection seL4VMDTBPassthrough vm_dtb(from vm0.dtb_self, to vm0.dtb);
+    }
+    configuration {
+        VM_GENERAL_CONFIGURATION_DEF()
+        VM_CONFIGURATION_DEF(0)
+        vm0.simple_untyped24_pool = 12;
+    }
+}
+\end{lstlisting}
+
+\section{AST Generation Problem Analysis}
+
+\subsection{Problem Description}
+
+During the investigation of FreeRTOS VM build issues, a critical AST (Abstract Syntax Tree) generation problem was identified that prevents successful builds across all VM applications in the camkes-vm-examples repository.
+
+\subsubsection{Symptom Analysis}
+
+The build system consistently fails with the following error pattern:
+
+\begin{lstlisting}[caption=AST Generation Error]
+CMake Error at /tools/seL4/cmake-tool/helpers/make.cmake:13 (file):
+  file failed to open for reading (No such file or directory):
+    /build/ast.pickle.d
+
+CMake Error at /projects/camkes-tool/camkes.cmake:531 (message):
+  Failed to generate /build/ast.pickle
+\end{lstlisting}
+
+\subsubsection{Root Cause Investigation}
+
+The investigation revealed multiple interconnected issues:
+
+\begin{enumerate}
+\item \textbf{Missing Include Paths}: The CAmkES parser cannot locate required header files
+\item \textbf{Environment Variable Issues}: CAMKES\_VM\_DIR not properly expanded
+\item \textbf{Dependency Resolution Problems}: Missing dependencies for ast.pickle.d generation
+\end{enumerate}
+
+\subsection{Manual AST Generation Analysis}
+
+\subsubsection{Include Path Problems}
+
+Manual execution of the CAmkES parser revealed include path issues:
+
+\begin{lstlisting}[caption=Manual AST Generation Attempt]
+PYTHONPATH=/projects/camkes-tool:/projects/capdl/python-capdl-tool \
+python3 -m camkes.parser \
+  --file /projects/vm-examples/apps/Arm/vm_freertos/vm_minimal.camkes \
+  --save-ast /build/ast.pickle
+
+ERROR: configurations/vm.h: No such file or directory
+\end{lstlisting}
+
+\subsubsection{Variable Expansion Issues}
+
+The CAMKES\_VM\_DIR variable was not being properly expanded:
+
+\begin{lstlisting}[caption=Variable Expansion Problem]
+# Expected: -I/home/user/projects/vm/components/VM_Arm
+# Actual:   -I/components/VM_Arm
+\end{lstlisting}
+
+\subsection{Resolution Strategies}
+
+\subsubsection{Immediate Workarounds}
+
+Several workaround approaches were attempted:
+
+\begin{enumerate}
+\item \textbf{Manual Include Path Specification}: Using explicit paths instead of variables
+\item \textbf{Empty File Creation}: Creating placeholder ast.pickle.d files
+\item \textbf{Environment Variable Setting}: Manually setting missing variables
+\end{enumerate}
+
+\subsubsection{Systematic Solutions}
+
+The proper resolution requires addressing the root configuration issues:
+
+\begin{enumerate}
+\item \textbf{Build System Repair}: Fix variable expansion in CMake configuration
+\item \textbf{Include Path Correction}: Ensure all necessary paths are available
+\item \textbf{Dependency Chain Fix}: Resolve the missing dependency files
+\end{enumerate}
+
+\section{FreeRTOS VM Implementation Details}
+
+\subsection{Custom VM Application Structure}
+
+The vm\_freertos application represents a custom implementation for RTOS virtualization:
+
+\subsubsection{Component Architecture}
+
+\begin{lstlisting}[language=c, caption=FreeRTOS VM Main Structure]
+// VM Component Implementation
+struct camkes_vm_config {
+    .ram_base = 0x40000000,
+    .ram_size = 0x20000000,
+    .dtb_addr = 0x4F000000,
+    .kernel_entry = 0x40000000,  // Critical for proper startup
+};
+\end{lstlisting}
+
+\subsubsection{Memory Layout Configuration}
+
+The FreeRTOS VM requires specific memory layout considerations:
+
+\begin{description}
+\item[RAM Base:] 0x40000000 (1GB mark in virtual address space)
+\item[RAM Size:] 0x20000000 (512MB allocated for guest)
+\item[DTB Location:] 0x4F000000 (Device tree blob)
+\item[Entry Point:] 0x40000000 (Must match linker script)
+\end{description}
+
+\subsection{Guest OS Configuration}
+
+\subsubsection{FreeRTOS Linker Script}
+
+The linker script defines the memory layout:
+
+\begin{lstlisting}[caption=FreeRTOS Linker Script]
+SECTIONS {
+    . = 0x40000000;              /* Match VM RAM base */
+    .text : { *(.text*) }        /* Code section */
+    .rodata : { *(.rodata*) }    /* Read-only data */
+    .data : { *(.data*) }        /* Initialized data */
+    .bss : { *(.bss*) *(COMMON) } /* Uninitialized data */
+}
+\end{lstlisting}
+
+\subsubsection{Startup Assembly}
+
+Critical startup code for ARM execution:
+
+\begin{lstlisting}[language={[ARM]Assembler}, caption=FreeRTOS Startup]
+.section .text
+.global _start
+_start:
+    ldr sp, =0x48000000    # Set stack pointer (128MB mark)
+    bl main                # Jump to C main function
+    b .                    # Infinite loop if main returns
+\end{lstlisting}
+
+\section{Binary Loading Analysis}
+
+\subsection{ELF vs Binary Format Issues}
+
+The investigation revealed critical differences between ELF and binary loading:
+
+\subsubsection{ELF Format Advantages}
+
+ELF format preserves essential metadata:
+
+\begin{itemize}
+\item \textbf{Entry Point Information}: e\_entry field specifies execution start address
+\item \textbf{Program Headers}: Define memory segment layout and permissions
+\item \textbf{Section Information}: Enables debugging and symbol resolution
+\item \textbf{Relocation Data}: Supports position-independent execution
+\end{itemize}
+
+\subsubsection{Binary Format Limitations}
+
+Raw binary format loses critical information:
+
+\begin{itemize}
+\item \textbf{No Entry Point}: VM must guess where execution should begin
+\item \textbf{No Memory Layout}: Segments must be loaded contiguously
+\item \textbf{No Metadata}: Debugging and analysis capabilities lost
+\end{itemize}
+
+\subsection{VM Loader Behavior}
+
+\subsubsection{ELF Loading Process}
+
+When loading ELF files, the VM framework:
+
+\begin{enumerate}
+\item Parses ELF header to extract entry point
+\item Maps program segments according to program headers
+\item Sets VCPU initial PC to entry point address
+\item Configures memory permissions per segment
+\end{enumerate}
+
+\subsubsection{Binary Loading Assumptions}
+
+Binary loading makes potentially incorrect assumptions:
+
+\begin{enumerate}
+\item Assumes entry point equals load base address
+\item Maps entire binary as executable
+\item Provides no validation of memory layout
+\item May use incorrect default entry points
+\end{enumerate}
+
+\section{Development Best Practices}
+
+\subsection{Configuration Management}
+
+\subsubsection{Platform-Specific Settings}
+
+Each platform requires careful configuration:
+
+\begin{lstlisting}[language=cmake, caption=Platform Configuration]
+if("${KernelARMPlatform}" STREQUAL "qemu-arm-virt")
+    set(cpp_flags "-DKERNELARMPLATFORM_QEMU-ARM-VIRT")
+    
+    # Guest image configuration
+    AddToFileServer("linux" "${GUEST_IMAGE_PATH}")
+    
+    # Memory layout settings
+    vm0.linux_address_config = {
+        "linux_ram_base" : "0x40000000",
+        "linux_ram_size" : "0x20000000",
+        "dtb_addr" : "0x4F000000"
+    };
+endif()
+\end{lstlisting}
+
+\subsubsection{Build System Organization}
+
+Recommended project structure:
+
+\begin{lstlisting}[caption=Project Structure]
+camkes-vm-examples/
+├── build/                  # Build artifacts (gitignored)
+├── projects/
+│   ├── vm-examples/
+│   │   └── apps/
+│   │       └── Arm/
+│   │           └── vm_freertos/    # Custom VM application
+│   ├── vm/                # VM framework components
+│   ├── camkes-tool/       # CAmkES build tools
+│   └── seL4_libs/         # seL4 support libraries
+└── tools/                 # Build toolchain
+\end{lstlisting}
+
+\subsection{Debugging Strategies}
+
+\subsubsection{Build System Debugging}
+
+Effective approaches for build system issues:
+
+\begin{enumerate}
+\item \textbf{Verbose Output}: Use -v flags to see actual commands
+\item \textbf{Manual Execution}: Run individual build steps manually
+\item \textbf{Dependency Analysis}: Check file dependencies and timestamps
+\item \textbf{Environment Validation}: Verify all required variables are set
+\end{enumerate}
+
+\subsubsection{VM Runtime Debugging}
+
+For runtime VM issues:
+
+\begin{enumerate}
+\item \textbf{Serial Console Output}: Monitor guest OS boot messages
+\item \textbf{Memory Layout Verification}: Check load addresses match expectations
+\item \textbf{Entry Point Analysis}: Verify execution starts at correct address
+\item \textbf{Binary Analysis}: Use objdump to examine guest images
+\end{enumerate}
+
+\section{Research Applications and Extensions}
+
+\subsection{Security Research Opportunities}
+
+The CAmkES VM framework enables several research directions:
+
+\subsubsection{Formal Verification}
+
+Leveraging seL4's formal verification:
+
+\begin{itemize}
+\item \textbf{VMM Verification}: Proving correctness of VM monitor components
+\item \textbf{Isolation Guarantees}: Formal proof of VM isolation properties
+\item \textbf{Information Flow Control}: Verified inter-VM communication
+\end{itemize}
+
+\subsubsection{RTOS Virtualization}
+
+FreeRTOS and other RTOS virtualization research:
+
+\begin{itemize}
+\item \textbf{Real-Time Guarantees}: Maintaining timing properties under virtualization
+\item \textbf{Resource Partitioning}: Deterministic resource allocation
+\item \textbf{Interrupt Virtualization}: Low-latency interrupt handling
+\end{itemize}
+
+\subsection{Performance Analysis}
+
+\subsubsection{Virtualization Overhead}
+
+Key metrics for performance analysis:
+
+\begin{description}
+\item[VM Exit Frequency:] Number of exits from guest to host per second
+\item[Context Switch Latency:] Time required for VM context switches
+\item[Memory Overhead:] Additional memory required for virtualization
+\item[I/O Performance:] Throughput comparison with native execution
+\end{description}
+
+\subsubsection{Optimization Opportunities}
+
+Areas for performance improvement:
+
+\begin{enumerate}
+\item \textbf{Device Emulation}: Hardware-assisted device passthrough
+\item \textbf{Memory Management}: Optimized page table handling
+\item \textbf{Interrupt Delivery}: Direct interrupt injection
+\item \textbf{I/O Acceleration}: Virtio optimization
+\end{enumerate}
+
+\section{Common Issues and Solutions}
+
+\subsection{Build System Problems}
+
+\subsubsection{AST Generation Failures}
+
+\textbf{Problem}: CAmkES parser cannot generate AST files
+
+\textbf{Solutions}:
+\begin{enumerate}
+\item Verify all include paths are correctly configured
+\item Check that CAMKES\_VM\_DIR is properly set
+\item Ensure Python environment contains required packages
+\item Manually run parser with verbose output for debugging
+\end{enumerate}
+
+\subsubsection{Missing Dependencies}
+
+\textbf{Problem}: Build fails due to missing tools or libraries
+
+\textbf{Solutions}:
+\begin{enumerate}
+\item Run install-requirements.sh script
+\item Verify cross-compilation toolchain installation
+\item Check Python virtual environment activation
+\item Validate repo sync completion
+\end{enumerate}
+
+\subsection{Runtime Problems}
+
+\subsubsection{VM Boot Failures}
+
+\textbf{Problem}: Guest OS fails to start or crashes during boot
+
+\textbf{Solutions}:
+\begin{enumerate}
+\item Verify memory layout matches linker script
+\item Check entry point configuration
+\item Ensure DTB (Device Tree Blob) is properly generated
+\item Validate file server image loading
+\end{enumerate}
+
+\subsubsection{Binary Format Issues}
+
+\textbf{Problem}: Guest execution starts at wrong address
+
+\textbf{Solutions}:
+\begin{enumerate}
+\item Use ELF format instead of raw binary
+\item Verify entry point matches expected address
+\item Check objdump output for correct load addresses
+\item Ensure VM loader supports chosen format
+\end{enumerate}
+
+\section{Future Directions and Recommendations}
+
+\subsection{Framework Improvements}
+
+\subsubsection{Build System Enhancements}
+
+Recommended improvements to address current issues:
+
+\begin{enumerate}
+\item \textbf{Robust Error Handling}: Better error messages for common failures
+\item \textbf{Dependency Validation}: Automated checking of build dependencies
+\item \textbf{Configuration Validation}: Verify platform/application compatibility
+\item \textbf{Environment Setup}: Automated environment configuration scripts
+\end{enumerate}
+
+\subsubsection{Documentation and Tooling}
+
+Areas needing improvement:
+
+\begin{enumerate}
+\item \textbf{Troubleshooting Guides}: Comprehensive problem resolution documentation
+\item \textbf{Development Tools}: Better debugging and analysis utilities
+\item \textbf{Configuration Examples}: More platform-specific examples
+\item \textbf{Testing Framework}: Automated validation of VM configurations
+\end{enumerate}
+
+\subsection{Research Directions}
+
+\subsubsection{Advanced Virtualization Features}
+
+Future research opportunities:
+
+\begin{itemize}
+\item \textbf{Nested Virtualization}: Running hypervisors within VMs
+\item \textbf{Hardware Security}: Integration with ARM TrustZone and Intel SGX
+\item \textbf{Fault Tolerance}: VM checkpoint and recovery mechanisms
+\item \textbf{Live Migration}: Moving running VMs between platforms
+\end{itemize}
+
+\subsubsection{Formal Methods Integration}
+
+Extending formal verification capabilities:
+
+\begin{itemize}
+\item \textbf{Automated Verification}: Tools for verifying VM configurations
+\item \textbf{Model Checking}: Temporal property verification for VM systems
+\item \textbf{Compositional Verification}: Modular verification of complex systems
+\end{itemize}
+
+\section{Conclusion}
+
+The CAmkES VM framework represents a significant advancement in secure virtualization, providing a formally verified foundation for running guest operating systems with strong isolation guarantees. However, the complexity of the system introduces various challenges, particularly in build system configuration and debugging.
+
+The investigation of the FreeRTOS VM implementation revealed critical insights into:
+
+\begin{enumerate}
+\item The importance of proper binary format selection for guest loading
+\item The complexity of the CAmkES build system and its potential failure modes
+\item The need for systematic debugging approaches when dealing with multi-layered systems
+\item The value of comprehensive documentation for complex research frameworks
+\end{enumerate}
+
+Key findings from this analysis:
+
+\begin{description}
+\item[Binary Format Matters:] The choice between ELF and raw binary formats has profound implications for VM execution
+\item[Build System Fragility:] Complex build systems require careful configuration and maintenance
+\item[Documentation Gaps:] Insufficient troubleshooting documentation hampers development productivity
+\item[Research Potential:] The framework provides excellent opportunities for security and virtualization research
+\end{description}
+
+\subsection{Recommendations for Practitioners}
+
+For researchers and developers working with CAmkES VM:
+
+\begin{enumerate}
+\item \textbf{Always use ELF format} for guest images to preserve entry point information
+\item \textbf{Maintain comprehensive build documentation} including known issues and solutions
+\item \textbf{Implement systematic debugging procedures} for both build and runtime issues
+\item \textbf{Validate configurations thoroughly} before attempting complex modifications
+\item \textbf{Contribute back to the community} by documenting solutions to common problems
+\end{enumerate}
+
+\subsection{Final Thoughts}
+
+The CAmkES VM framework demonstrates the potential of microkernel-based virtualization for security-critical applications. While the learning curve is steep and the build system can be challenging, the security guarantees and research opportunities justify the investment. As the framework matures, addressing the identified build system issues and improving documentation will significantly enhance its accessibility for the research community.
+
+This analysis serves as both a technical reference and a troubleshooting guide, intended to accelerate future research and development efforts using the CAmkES VM framework.
+
+\bibliographystyle{plain}
+\begin{thebibliography}{99}
+
+\bibitem{sel4}
+Klein, G., et al. "seL4: formal verification of an OS kernel." 
+\textit{Proceedings of the ACM SIGOPS 22nd symposium on Operating systems principles}. 2009.
+
+\bibitem{camkes}
+Kuz, I., et al. "CAmkES: A component model for secure microkernel-based embedded systems." 
+\textit{Journal of Systems and Software} 80.5 (2007): 687-699.
+
+\bibitem{camkes-vm}
+Data61. "CAmkES VM: Virtualization on seL4."
+\textit{seL4 Foundation Documentation}. Available: https://docs.sel4.systems/projects/camkes-vm/
+
+\bibitem{armv8-virt}
+ARM Limited. "ARM Architecture Reference Manual ARMv8, for ARMv8-A architecture profile." 
+ARM DDI 0487, 2017.
+
+\bibitem{vm-research}
+Heiser, G., and Elphinstone, K. "L4 microkernels: The lessons from 20 years of research and deployment." 
+\textit{ACM Transactions on Computer Systems} 34.1 (2016): 1-29.
+
+\bibitem{freertos}
+Barry, R. "Using the FreeRTOS Real Time Kernel-A Practical Guide." 
+Real Time Engineers Ltd., 2010.
+
+\bibitem{elf-spec}
+Tool Interface Standard (TIS). "Executable and Linking Format (ELF) Specification Version 1.2." 
+TIS Committee, 1995.
+
+\bibitem{virtio}
+Rusty Russell. "virtio: Towards a De-Facto Standard For Virtual I/O Devices." 
+\textit{ACM SIGOPS Operating Systems Review} 42.5 (2008): 95-103.
+
+\end{thebibliography}
+
+\end{document}

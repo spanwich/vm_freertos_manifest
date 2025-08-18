@@ -1,0 +1,567 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+
+% Code listing configuration
+\lstset{
+    basicstyle=\ttfamily\small,
+    commentstyle=\color{gray},
+    keywordstyle=\color{blue},
+    stringstyle=\color{red},
+    showstringspaces=false,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    backgroundcolor=\color{gray!10}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{seL4 Debugging Tools Literature Review}
+\lfoot{PhD Research Documentation}
+\rfoot{\thepage}
+
+\title{State-of-the-Art Debugging Tools for seL4 Microkernel: \\
+A Comprehensive Literature Review and Technical Analysis}
+
+\author{PhD Research Documentation}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This comprehensive literature review examines the current state of debugging tools and methodologies for the seL4 microkernel, a formally verified operating system kernel. We analyze four primary categories of debugging infrastructure: capability space debugging through seL4\_DebugSnapshot and capDL, capability identification via seL4\_DebugCapIdentify, hardware-assisted debugging with GDB integration, and component-level debugging in CAmkES. Our analysis reveals significant gaps in capability-physical memory debugging, motivating novel research directions in verified system debugging methodologies. This review serves as foundational work for developing advanced debugging tools that preserve seL4's formal verification guarantees while providing essential debugging capabilities for complex systems.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+
+The seL4 microkernel represents a milestone in operating systems research as the world's first general-purpose operating system kernel with a complete formal proof of functional correctness~\cite{Klein2009sel4}. However, the formal verification and capability-based security model of seL4 present unique challenges for system debugging and development. Traditional debugging approaches often conflict with the mathematical guarantees provided by formal verification, creating a need for specialized debugging tools and methodologies.
+
+This literature review systematically examines the current state of debugging infrastructure for seL4-based systems, focusing on four primary categories of debugging tools. We analyze their capabilities, limitations, and research context to identify gaps that represent opportunities for novel contributions to the field of verified system debugging.
+
+\section{Methodology}
+
+Our literature review methodology combines systematic analysis of official seL4 documentation, examination of source code implementations, survey of academic publications, and analysis of community-developed tools. We categorize debugging tools based on their primary function and analyze each category's capabilities, use cases, limitations, and research context.
+
+\section{seL4\_DebugSnapshot: Capability Space Dump and capDL Integration}
+
+\subsection{Technical Overview}
+
+The \texttt{seL4\_DebugSnapshot} system call provides runtime capability space introspection by generating a complete dump of the current kernel state in Capability Distribution Language (capDL) format~\cite{Kuz2010capdl}. This functionality represents the primary mechanism for examining the abstract capability layout of running seL4 systems.
+
+\begin{lstlisting}[caption=seL4\_DebugSnapshot System Call Interface, language=C]
+#ifdef CONFIG_DEBUG_BUILD
+LIBSEL4_INLINE_FUNC void seL4_DebugSnapshot(void)
+{
+    // Architecture-specific system call implementation
+    // Outputs complete capDL dump to kernel console
+}
+#endif
+\end{lstlisting}
+
+\subsection{Capability Distribution Language (capDL)}
+
+CapDL serves as both a specification language and debugging format for seL4 systems. Kuz et al.~\cite{Kuz2010capdl} introduced capDL as ``a language for describing capability-based systems'' with the motivation that ``capabilities provide an access control model that can be used to construct systems where safety of protection can be precisely determined.''
+
+The capDL framework provides several key features:
+\begin{itemize}
+\item \textbf{Abstract Capability Representation}: Describes kernel objects and capability distributions without implementation details
+\item \textbf{Formal Verification Integration}: Generates Isabelle/HOL theory files for formal analysis
+\item \textbf{System Initialization}: Produces C source files for the capDL initializer
+\item \textbf{Multi-format Output}: Supports various output formats for different analysis tools
+\end{itemize}
+
+\subsection{Implementation Status and Evolution}
+
+The implementation status of \texttt{seL4\_DebugSnapshot} has evolved significantly over seL4's development lifecycle. Historical documentation indicates periods where ``it is better to assume DebugSnapshot is unsupported''~\cite{sel4-mailing-list-2018}, reflecting the challenges of maintaining debugging infrastructure alongside formal verification requirements.
+
+Recent improvements in seL4 version 12.0.0 updated \texttt{seL4\_DebugSnapshot} to ``provide a CapDL dump of the capability layout of a running system for Arm, x86\_64 and riscv32 configurations''~\cite{sel4-changelog}. This improvement represents significant progress in making capability debugging accessible across multiple architectures.
+
+\subsection{Use Cases and Applications}
+
+\texttt{seL4\_DebugSnapshot} serves several critical debugging scenarios:
+
+\begin{enumerate}
+\item \textbf{System State Analysis}: Examining complete capability space layout during runtime
+\item \textbf{Capability Leak Detection}: Identifying unexpectedly retained capabilities
+\item \textbf{Access Control Verification}: Validating that capability distributions match security requirements
+\item \textbf{System Initialization Debugging}: Analyzing capability setup during boot process
+\end{enumerate}
+
+\subsection{Limitations and Research Gaps}
+
+Despite its utility, \texttt{seL4\_DebugSnapshot} exhibits several significant limitations:
+
+\begin{itemize}
+\item \textbf{Abstract-Only View}: Provides no information about physical memory mappings
+\item \textbf{Static Snapshot}: Lacks temporal analysis of capability operations
+\item \textbf{Console-Only Output}: Requires kernel console access, limiting automation
+\item \textbf{Performance Impact}: Complete system dump may be costly in time-critical scenarios
+\item \textbf{Limited Filtering}: No capability-specific or component-specific filtering options
+\end{itemize}
+
+\section{seL4\_DebugCapIdentify: Runtime Capability Type Identification}
+
+\subsection{Technical Specification}
+
+The \texttt{seL4\_DebugCapIdentify} system call provides runtime capability type identification, returning internal seL4 capability type information for debugging purposes~\cite{sel4-api-reference}.
+
+\begin{lstlisting}[caption=seL4\_DebugCapIdentify System Call Interface, language=C]
+#ifdef CONFIG_DEBUG_BUILD
+LIBSEL4_INLINE_FUNC seL4_Uint32 seL4_DebugCapIdentify(seL4_CPtr cap)
+{
+    // Returns internal seL4 capability type
+    // Type corresponds to generated enum cap_tag
+    // Available when CONFIG_DEBUG_BUILD is enabled
+}
+#endif
+\end{lstlisting}
+
+\subsection{Capability Type System}
+
+The function returns capability types corresponding to seL4's internal \texttt{cap\_tag\_t} enumeration, which includes types such as:
+
+\begin{itemize}
+\item Untyped capabilities for raw memory allocation
+\item TCB (Thread Control Block) capabilities for thread management
+\item CNode capabilities for capability space management  
+\item Page Table and Page Directory capabilities for memory management
+\item IRQ capabilities for interrupt handling
+\item Architecture-specific capability types
+\end{itemize}
+
+\subsection{Debug Applications}
+
+\texttt{seL4\_DebugCapIdentify} supports several debugging scenarios:
+
+\begin{enumerate}
+\item \textbf{Capability Validation}: Verifying that capability slots contain expected types
+\item \textbf{Access Control Debugging}: Understanding why capability operations fail
+\item \textbf{System State Inspection}: Examining capability types during runtime analysis
+\item \textbf{Component Interface Debugging}: Validating capability exchanges between components
+\end{enumerate}
+
+\subsection{Integration with Debugging Workflows}
+
+The capability identification functionality integrates with broader debugging workflows:
+
+\begin{lstlisting}[caption=Example Usage Pattern for Capability Debugging, language=C]
+// Validate capability before use
+seL4_Uint32 cap_type = seL4_DebugCapIdentify(suspected_tcb_cap);
+if (cap_type == cap_thread_cap) {
+    // Safe to use as TCB capability
+    seL4_TCB_Configure(suspected_tcb_cap, ...);
+} else {
+    seL4_DebugPutString("Unexpected capability type detected\n");
+}
+\end{lstlisting}
+
+\subsection{Limitations and Research Opportunities}
+
+Key limitations of \texttt{seL4\_DebugCapIdentify} include:
+
+\begin{itemize}
+\item \textbf{Type-Only Information}: Provides no details about capability rights or parameters
+\item \textbf{No Physical Mapping}: Cannot determine physical resources controlled by capability
+\item \textbf{Limited Metadata}: No information about capability provenance or history
+\item \textbf{Single Capability Focus}: No batch processing or capability space traversal
+\end{itemize}
+
+\section{Hardware Debugging: GDB Integration and Breakpoint Support}
+
+\subsection{seL4 Hardware Debug APIs}
+
+The seL4 microkernel ``leverages the hardware debugging capabilities of modern processors, and exports hardware breakpoint, watchpoint, and single-stepping to user threads via conditionally compiled-in APIs''~\cite{sel4-hardware-debug-tutorial}. This represents a sophisticated approach to integrating hardware debugging features with seL4's security model.
+
+\subsubsection{Hardware Breakpoint Management}
+
+seL4 provides comprehensive hardware breakpoint support through specialized system calls:
+
+\begin{lstlisting}[caption=seL4 Hardware Breakpoint APIs, language=C]
+// Set hardware breakpoint on virtual address
+seL4_Error seL4_TCB_SetBreakpoint(seL4_CPtr tcb, 
+                                  seL4_Uint16 bp_num,
+                                  seL4_Word vaddr, 
+                                  seL4_Word type, 
+                                  seL4_Word size, 
+                                  seL4_Word rw);
+
+// Retrieve breakpoint configuration
+seL4_Error seL4_TCB_GetBreakpoint(seL4_CPtr tcb, 
+                                  seL4_Uint16 bp_num,
+                                  seL4_Word *vaddr, 
+                                  seL4_Word *type, 
+                                  seL4_Word *size, 
+                                  seL4_Word *rw,
+                                  seL4_Bool *is_enabled);
+
+// Configure single-stepping debugging
+seL4_Error seL4_TCB_ConfigureSingleStepping(seL4_CPtr tcb,
+                                           seL4_Uint16 bp_num,
+                                           seL4_Word num_instructions);
+\end{lstlisting}
+
+\subsubsection{Debug Exception Handling}
+
+seL4's debug exception framework provides structured information about debug events:
+
+\begin{lstlisting}[caption=Debug Exception Message Format, language=C]
+typedef enum {
+    seL4_DebugException_FaultIP,
+    seL4_DebugException_ExceptionReason,
+    seL4_DebugException_TriggerAddress,
+    seL4_DebugException_BreakpointNumber,
+    seL4_DebugException_Length,
+} seL4_DebugException_Msg;
+\end{lstlisting}
+
+\subsection{libGDB: Experimental GDB Integration Library}
+
+The Australian National University's Trustworthy Systems group has developed libGDB, an ``experimental library that aims to provide debugger support for seL4 based systems''~\cite{libgdb-github}. This library represents cutting-edge research in bringing professional debugging capabilities to formally verified systems.
+
+\subsubsection{Architecture and Design}
+
+libGDB is designed for use with the seL4 microkit and implements the GDB Remote Serial Protocol for communication between host debuggers and target seL4 systems. The architecture includes:
+
+\begin{itemize}
+\item \textbf{Debug Server Component}: Handles GDB remote protocol communication
+\item \textbf{Target Integration}: Manages TCB and VSpace capabilities for debugged threads
+\item \textbf{Fault Handler Integration}: Processes debug exceptions and converts them to GDB messages
+\item \textbf{Memory Access Interface}: Provides safe memory read/write operations
+\end{itemize}
+
+\subsubsection{Platform Support and Testing}
+
+The library has been extensively tested on ARM architectures, particularly:
+\begin{itemize}
+\item ODroid C2 and C4 platforms
+\item QEMU ARM Virt (AArch64)
+\item Generic AArch64 platform support
+\end{itemize}
+
+\subsubsection{Network Debugging Capabilities}
+
+Advanced configurations support TCP-based debugging through sDDF networking subsystems, providing ``the most flexible configuration'' for remote debugging scenarios~\cite{libgdb-github}.
+
+\subsection{Recent Research: Renode Integration}
+
+Antmicro's recent work on ``seL4 userspace debugging with GDB extensions in Renode''~\cite{antmicro-renode-sel4} represents significant advancement in seL4 debugging capabilities. This research introduces:
+
+\begin{itemize}
+\item \textbf{Thread-Aware Breakpoints}: Advanced breakpoint management with thread context
+\item \textbf{Kernel-Userspace Transitions}: Seamless debugging across privilege boundaries  
+\item \textbf{Symbol File Management}: Automatic symbol switching for different system components
+\item \textbf{Simulation Integration}: Integration with Renode simulation platform
+\end{itemize}
+
+\subsection{Hardware Debug Limitations and Research Gaps}
+
+Despite sophisticated hardware debugging support, several limitations remain:
+
+\begin{itemize}
+\item \textbf{Architecture Dependency}: Hardware debugging features vary significantly across platforms
+\item \textbf{Limited Capability Context}: Hardware breakpoints lack capability system integration
+\item \textbf{Physical Memory Abstraction}: No direct correlation between debug events and physical memory
+\item \textbf{Verification Interaction}: Unclear interaction between debugging operations and formal verification guarantees
+\end{itemize}
+
+\section{CAmkES Component Debugging}
+
+\subsection{CAmkES Debug Framework Overview}
+
+The Component Architecture for microkernel-based Embedded Systems (CAmkES) provides a comprehensive debugging framework specifically designed for component-based seL4 systems~\cite{Kuz2007camkes}. This framework addresses the unique challenges of debugging distributed component architectures while maintaining seL4's security properties.
+
+\subsection{Debug Server Architecture}
+
+The CAmkES debug framework implements a sophisticated client-server architecture for remote debugging:
+
+\begin{lstlisting}[caption=CAmkES Debug Component Integration, language=C]
+#include <camkes/gdb/adl.h>
+
+component Client {
+    control;
+    uses Simple a;
+    /* Add required connector interfaces for debug server */
+    DEBUG_COMPONENT()
+}
+
+assembly {
+    composition {
+        component Echo echo;
+        component Client client;
+        connection seL4RPCCall simple(from client.a, to echo.b);
+    }
+}
+
+/* Add debug server assembly and serial port configuration */
+DEBUG_COMPOSITION(client, 3, "0x2f8:0x2ff")
+\end{lstlisting}
+
+\subsubsection{Debug Communication Protocol}
+
+The debug server component communicates with remote GDB clients using the GDB Remote Serial Protocol. Key architectural features include:
+
+\begin{itemize}
+\item \textbf{seL4GDB RPC Connection}: Specialized RPC interface for debugger-target communication
+\item \textbf{Memory and Register Access}: Safe read/write operations on target component state
+\item \textbf{Hardware Breakpoint Integration}: Hardware breakpoint and watchpoint management
+\item \textbf{Fault Endpoint Management}: Centralized handling of debug exceptions from target threads
+\end{itemize}
+
+\subsubsection{Serial Communication Interface}
+
+The framework supports both direct serial communication and network-based debugging:
+
+\begin{lstlisting}[caption=QEMU Debug Configuration, language=bash]
+qemu-system-i386 -nographic -m 512 -cpu Haswell \
+    -kernel kernel-ia32-pc99 \
+    -initrd capdl-loader-experimental-image-ia32-pc99 \
+    -device isa-serial,chardev=ch0 \
+    -device isa-serial,chardev=ch1 \
+    -chardev file,path=/dev/tty,id=ch0 \
+    -chardev socket,host=127.0.0.1,port=1234,id=ch1,server,wait
+\end{lstlisting}
+
+\subsection{Debugging Capabilities}
+
+The CAmkES debug framework provides comprehensive debugging functionality:
+
+\begin{enumerate}
+\item \textbf{Memory and Register Inspection}: Complete read/write access to component memory and processor registers
+\item \textbf{Execution Control}: Single-stepping, continue, and halt operations
+\item \textbf{Breakpoint Management}: Both software and hardware breakpoints with component context
+\item \textbf{Watchpoint Support}: Hardware watchpoints on global variables (with limitations on stack variables)
+\item \textbf{Backtrace Generation}: Call stack analysis for component code
+\item \textbf{Variable Inspection}: Runtime examination of component variables and data structures
+\end{enumerate}
+
+\subsection{Integration with Formal Verification}
+
+Recent research has demonstrated automated proof generation where ``CAmkES produces formal proofs in Isabelle/HOL following a translation-validation approach, demonstrating that the generated glue code obeys a high-level specification''~\cite{amani2016cogent}. This integration ensures that debugging infrastructure does not compromise the formal verification guarantees of the underlying system.
+
+\subsection{Configuration Requirements}
+
+Effective CAmkES debugging requires specific kernel and build configurations:
+
+\begin{itemize}
+\item \textbf{CAMKES\_CPP}: Enable CAmkES preprocessing for debug macros
+\item \textbf{CAPDL\_LOADER\_WRITEABLE\_PAGES}: Allow GDB to modify instructions for software breakpoints
+\item \textbf{CONFIG\_DEBUG\_BUILD}: Enable kernel debug system calls
+\item \textbf{Platform-Specific Settings}: Serial port interrupts and I/O port addresses
+\end{itemize}
+
+\subsection{Current Limitations and Research Directions}
+
+The CAmkES debug framework exhibits several limitations that represent research opportunities:
+
+\begin{subsubsection}Architecture and Platform Constraints}
+\begin{itemize}
+\item \textbf{Limited Architecture Support}: Currently compatible primarily with ia32 architecture
+\item \textbf{Serial Dependency}: Requires exclusive serial port access, limiting deployment scenarios
+\item \textbf{Stack Variable Limitations}: Watchpoints not supported on local variables and stack-allocated data
+\end{itemize}
+
+\subsubsection{Component Interaction Debugging}
+\begin{itemize}
+\item \textbf{Inter-Component Communication}: Limited visibility into capability-based communication between components
+\item \textbf{Component Lifecycle}: Insufficient debugging support for component initialization and teardown
+\item \textbf{Resource Attribution}: Difficulty correlating system resources with specific components
+\end{itemize}
+
+\subsubsection{Scalability and Performance}
+\begin{itemize}
+\item \textbf{Single-Component Focus}: Debugging framework targets individual components rather than system-wide analysis
+\item \textbf{Backtrace Limitations}: Backtrace operations can crash target components, preventing continued debugging
+\item \textbf{Debug Overhead}: Performance impact of debugging infrastructure on real-time systems
+\end{itemize}
+
+\section{Comparative Analysis and Research Gaps}
+
+\subsection{Capability System Integration}
+
+A comprehensive analysis of existing seL4 debugging tools reveals a significant gap in capability system integration. Table~\ref{tab:capability-integration} summarizes the capability debugging capabilities across different tools.
+
+\begin{table}[htbp]
+\centering
+\caption{Capability System Integration in seL4 Debugging Tools}
+\label{tab:capability-integration}
+\begin{tabular}{>{\raggedright}p{3cm}>{\centering}p{2.5cm}>{\centering}p{2.5cm}>{\centering}p{2.5cm}>{\centering}p{2.5cm}}
+\toprule
+\textbf{Tool} & \textbf{Abstract Caps} & \textbf{Physical Memory} & \textbf{Runtime Tracing} & \textbf{Component Context} \\
+\midrule
+seL4\_DebugSnapshot & ✓ & ✗ & ✗ & ✗ \\
+seL4\_DebugCapIdentify & ✓ & ✗ & ✗ & ✗ \\
+Hardware Debug APIs & ✗ & ✓ & ✓ & ✗ \\
+CAmkES Debug & ✗ & ✓ & ✓ & ✓ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Physical Memory Debugging Gap}
+
+The most significant research gap identified in this literature review is the absence of capability-to-physical memory debugging infrastructure. None of the existing tools provide:
+
+\begin{itemize}
+\item \textbf{Bidirectional Mapping}: Translation between capabilities and physical memory addresses
+\item \textbf{Memory Attribution}: Identification of which capabilities control specific physical memory regions
+\item \textbf{Capability-Aware Memory Debugging}: Memory access debugging with capability context
+\item \textbf{Physical Resource Tracking}: Monitoring of physical resource allocation through capability operations
+\end{itemize}
+
+\subsection{Temporal Analysis Limitations}
+
+Current debugging tools provide primarily static snapshots rather than temporal analysis capabilities:
+
+\begin{itemize}
+\item \textbf{Capability Operation Tracing}: No systematic tracking of capability grant, revoke, and delete operations
+\item \textbf{Memory Access Patterns}: Limited correlation between capability operations and memory access patterns
+\item \textbf{Resource Lifecycle Analysis}: Insufficient support for tracking resource allocation and deallocation over time
+\end{itemize}
+
+\subsection{Verification-Preserving Debugging}
+
+A critical challenge across all existing debugging tools is maintaining formal verification guarantees while providing debugging capabilities. Research opportunities include:
+
+\begin{itemize}
+\item \textbf{Observer-Only Debugging}: Developing debugging infrastructure that observes system state without modification
+\item \textbf{Conditional Compilation Strategies}: Ensuring zero overhead in production systems while maintaining debug capabilities in development
+\item \textbf{Formal Verification Integration}: Extending formal proofs to cover debugging infrastructure correctness
+\end{itemize}
+
+\section{Future Research Directions}
+
+\subsection{Capability-Physical Memory Bridge}
+
+The most promising research direction identified in this literature review is the development of debugging infrastructure that bridges seL4's abstract capability system with concrete physical memory management. This research would address fundamental questions such as:
+
+\begin{itemize}
+\item How can capability operations be efficiently traced to their physical memory effects?
+\item What debugging abstractions best support both capability-based reasoning and physical memory analysis?
+\item How can capability-physical debugging preserve formal verification guarantees?
+\end{itemize}
+
+\subsection{Temporal Capability Analysis}
+
+Advanced capability debugging would benefit from temporal analysis capabilities that track capability system evolution over time:
+
+\begin{itemize}
+\item \textbf{Capability Operation Logging}: Systematic recording of all capability operations with minimal performance overhead
+\item \textbf{Causality Analysis}: Understanding causal relationships between capability operations and system behavior
+\item \textbf{Resource Lifecycle Tracking}: Complete tracking of resource allocation, transfer, and deallocation
+\end{itemize}
+
+\subsection{Component-Capability Integration}
+
+Enhanced debugging support for CAmkES systems would integrate capability debugging with component-level analysis:
+
+\begin{itemize}
+\item \textbf{Component Capability Mapping}: Understanding which capabilities belong to which components
+\item \textbf{Inter-Component Capability Flow}: Tracing capability transfers between components
+\item \textbf{Component Resource Attribution}: Attributing physical resources to specific components through capability analysis
+\end{itemize}
+
+\section{Implications for Virtual Machine Debugging}
+
+The identified research gaps have particular relevance for virtual machine debugging in seL4-based systems, such as the vm\_freertos project analyzed in this research:
+
+\subsection{Guest Memory Debugging}
+\begin{itemize}
+\item \textbf{Guest Physical Memory Attribution}: Understanding which seL4 capabilities control guest physical memory regions
+\item \textbf{Virtual-to-Physical Translation Debugging}: Tracing guest virtual addresses through seL4's capability-mediated memory management
+\item \textbf{Memory Leak Detection}: Identifying memory leaks in virtualization layer through capability analysis
+\end{itemize}
+
+\subsection{Capability-Based Memory Isolation Analysis}
+\begin{itemize}
+\item \textbf{Isolation Verification}: Verifying that guest memory is properly isolated through capability analysis
+\item \textbf{Security Boundary Analysis}: Understanding security boundaries between host and guest through capability debugging
+\item \textbf{Resource Contention Analysis}: Identifying resource contention issues in virtualized environments
+\end{itemize}
+
+\section{Conclusion}
+
+This comprehensive literature review reveals a mature but incomplete ecosystem of debugging tools for seL4-based systems. While existing tools provide sophisticated capabilities for abstract capability analysis, hardware debugging, and component-level debugging, significant gaps remain in capability-physical memory integration and temporal capability analysis.
+
+The most significant research opportunity identified is the development of debugging infrastructure that bridges seL4's abstract capability system with concrete physical memory management. Such infrastructure would provide unprecedented visibility into the relationship between capability operations and their physical memory effects, enabling new classes of debugging and analysis for formally verified systems.
+
+These research gaps are particularly relevant for complex seL4-based systems such as virtualization platforms, where understanding the relationship between guest memory, host capabilities, and physical memory is crucial for effective debugging and security analysis.
+
+The development of advanced capability-physical debugging tools represents not only a technical contribution to the seL4 ecosystem but also a methodological contribution to the broader field of verified system debugging, demonstrating how debugging infrastructure can be developed while preserving formal verification guarantees.
+
+\bibliographystyle{plain}
+\begin{thebibliography}{10}
+
+\bibitem{Klein2009sel4}
+Gerwin Klein, Kevin Elphinstone, Gernot Heiser, June Andronick, David Cock, Philip Derrin, Dhammika Elkaduwe, Kai Engelhardt, Rafal Kolanski, Michael Norrish, Thomas Sewell, Harvey Tuch, and Simon Winwood.
+\newblock seL4: formal verification of an OS kernel.
+\newblock In \emph{Proceedings of the ACM SIGOPS 22nd symposium on Operating systems principles}, pages 207--220, 2009.
+
+\bibitem{Kuz2010capdl}
+Ihor Kuz, Yan Liu, Ian Gorton, and Gernot Heiser.
+\newblock capDL: a language for describing capability-based systems.
+\newblock In \emph{Proceedings of the first ACM asia-pacific workshop on Workshop on systems}, pages 31--36, 2010.
+
+\bibitem{Kuz2007camkes}
+Ihor Kuz, Yan Liu, Ian Gorton, and Gernot Heiser.
+\newblock CAmkES: A component model for secure microkernel-based embedded systems.
+\newblock \emph{Journal of Systems and Software}, 80(5):687--699, 2007.
+
+\bibitem{amani2016cogent}
+Sidney Amani, Alex Hixon, Zilin Chen, Christine Rizkallah, Peter Chubb, Liam O'Connor, Joel Beeren, Yutaka Nagashima, Japheth Lim, Thomas Sewell, et al.
+\newblock Cogent: Verifying high-assurance file system implementations.
+\newblock In \emph{ACM SIGPLAN Notices}, volume 51, pages 175--188. ACM, 2016.
+
+\bibitem{sel4-api-reference}
+seL4 Foundation.
+\newblock seL4 API Reference.
+\newblock \url{https://docs.sel4.systems/projects/sel4/api-doc.html}, 2024.
+\newblock [Online; accessed August 2024].
+
+\bibitem{sel4-hardware-debug-tutorial}
+seL4 Foundation.
+\newblock Hardware debugging of userspace threads.
+\newblock \url{https://docs.sel4.systems/projects/sel4-tutorials/debugging-userspace.html}, 2024.
+\newblock [Online; accessed August 2024].
+
+\bibitem{libgdb-github}
+Australian National University Trustworthy Systems Group.
+\newblock libgdb: Experimental library and infrastructure for using GDB with the seL4 microkernel.
+\newblock \url{https://github.com/au-ts/libgdb}, 2024.
+\newblock [Online; accessed August 2024].
+
+\bibitem{antmicro-renode-sel4}
+Antmicro.
+\newblock seL4 userspace debugging with GDB extensions in Renode.
+\newblock \url{https://antmicro.com/blog/2022/06/sel4-userspace-debugging-with-gdb-extensions-in-renode/}, 2022.
+\newblock [Online; accessed August 2024].
+
+\bibitem{sel4-changelog}
+seL4 Foundation.
+\newblock seL4 Kernel Changes.
+\newblock \url{https://github.com/seL4/seL4/blob/master/CHANGES.md}, 2024.
+\newblock [Online; accessed August 2024].
+
+\bibitem{sel4-mailing-list-2018}
+seL4 Development Mailing List.
+\newblock Re: Using seL4\_DebugSnapshot().
+\newblock \url{https://www.mail-archive.com/devel@sel4.systems/msg02574.html}, 2018.
+\newblock [Online; accessed August 2024].
+
+\end{thebibliography}
+
+\end{document}
