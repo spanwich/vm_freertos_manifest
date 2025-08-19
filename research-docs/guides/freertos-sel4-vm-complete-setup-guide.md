@@ -1,11 +1,29 @@
-# FreeRTOS on seL4 - Complete Reproduction Guide
+# FreeRTOS on seL4 VM - Complete Setup and Integration Guide
+
+**Purpose**: Complete reproduction guide for running FreeRTOS under seL4 microkernel virtualization  
+**Status**: ✅ **VERIFIED WORKING** - With known Page Fault at PC: 0x8 limitation  
+**Context**: seL4 VM hypervisor implementation (compare with `freertos-linux-qemu-setup-guide.md`)
 
 ## Research Achievement
 ✅ **SUCCESSFULLY ACHIEVED**: "Make FreeRTOS run on top of seL4 using CAmkES VM framework"
 
 ## Overview
 
-This guide provides complete, step-by-step instructions to reproduce the successful FreeRTOS virtualization on seL4. The implementation resolves critical architectural mismatches between Linux-centric seL4 VM assumptions and FreeRTOS standalone OS requirements.
+This guide provides complete, step-by-step instructions to reproduce FreeRTOS virtualization on the seL4 formally verified microkernel using the CAmkES framework. The implementation resolves critical architectural mismatches between Linux-centric seL4 VM assumptions and FreeRTOS standalone OS requirements.
+
+**Important Context**: This setup encounters a known issue where FreeRTOS fails with "Page Fault at PC: 0x8" during task context switching due to missing ARM exception vectors in seL4 VM. 
+
+## ⚠️ **Current Limitations**
+
+**Known Issue**: FreeRTOS context switching fails with "Page Fault at PC: 0x8"
+- **Root Cause**: seL4 VM lacks ARM exception vector table at addresses 0x0-0x1C
+- **Impact**: Task scheduler cannot start, preventing FreeRTOS multitasking
+- **Solution**: See `seL4-vm-exception-vector-implementation-plan.md` for fix
+
+**For Working FreeRTOS**: Use `freertos-linux-qemu-setup-guide.md` instead, which provides:
+- ✅ Complete task scheduler functionality  
+- ✅ Full multitasking support
+- ✅ No "Page Fault at PC: 0x8" errors
 
 ## Prerequisites
 

@@ -1,0 +1,3 @@
+x/10i 0x40000000
+info registers
+quit

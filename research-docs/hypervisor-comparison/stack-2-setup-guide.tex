@@ -1,0 +1,210 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=1in}
+
+% Code formatting
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!10},
+    numbers=left,
+    numberstyle=\tiny,
+    showstringspaces=false,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!50!black},
+    stringstyle=\color{red}
+}
+
+\title{Stack 2 Setup Guide: ARM32 Linux Hypervisor for FreeRTOS Virtualization}
+\author{PhD Research: Hypervisor Comparison Framework}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Overview}
+
+This document provides step-by-step instructions for setting up Stack 2 in the hypervisor comparison research framework. Stack 2 implements the traditional Linux hypervisor approach for running FreeRTOS as a virtualized guest.
+
+\subsection{Research Architecture}
+
+\begin{itemize}
+    \item \textbf{Stack 1}: QEMU $\rightarrow$ seL4 $\rightarrow$ FreeRTOS (formally verified microkernel)
+    \item \textbf{Stack 2}: QEMU $\rightarrow$ Linux ARM32 $\rightarrow$ FreeRTOS (traditional hypervisor)
+\end{itemize}
+
+\subsection{Stack 2 Components}
+
+\begin{itemize}
+    \item \textbf{Host}: Development machine
+    \item \textbf{L1 Hypervisor}: QEMU system emulation
+    \item \textbf{Guest OS}: Debian ARM32 Linux (acts as L2 hypervisor)
+    \item \textbf{Nested Guest}: FreeRTOS RTOS
+    \item \textbf{Architecture}: ARM32 (cortex-a15) for consistency
+\end{itemize}
+
+\section{Prerequisites}
+
+\begin{itemize}
+    \item QEMU system emulation for ARM32
+    \item FreeRTOS binary: \texttt{freertos\_image.bin}
+    \item Debian ARM32 image: \texttt{dqib\_armhf-virt}
+    \item SSH client for system access
+\end{itemize}
+
+\section{Step-by-Step Setup}
+
+\subsection{Step 1: Navigate to ARM32 Linux Directory}
+
+\begin{lstlisting}[language=bash]
+cd /home/konton-otome/phd/linux_vm_comparison/minimal_rootfs/rootfs/dqib_armhf-virt
+\end{lstlisting}
+
+\subsection{Step 2: Boot ARM32 Linux System}
+
+Execute the following QEMU command to start the ARM32 Linux system:
+
+\begin{lstlisting}[language=bash]
+qemu-system-arm \
+  -machine virt \
+  -cpu cortex-a15 \
+  -m 2047M \
+  -device virtio-blk-device,drive=hd \
+  -drive file=image.qcow2,if=none,id=hd \
+  -device virtio-net-device,netdev=net \
+  -netdev user,id=net,hostfwd=tcp::2223-:22 \
+  -kernel kernel \
+  -initrd initrd \
+  -nographic \
+  -append "root=LABEL=rootfs console=ttyAMA0"
+\end{lstlisting}
+
+\textbf{Note}: SSH port 2223 is used to avoid conflicts with other QEMU instances.
+
+\subsection{Step 3: System Login Options}
+
+\subsubsection{Console Login}
+\begin{itemize}
+    \item Username: \texttt{root}, Password: \texttt{root}
+    \item Username: \texttt{debian}, Password: \texttt{debian}
+\end{itemize}
+
+\subsubsection{SSH Login (Recommended)}
+\begin{lstlisting}[language=bash]
+ssh -p 2223 root@localhost
+\end{lstlisting}
+
+SSH provides better terminal emulation than the QEMU console.
+
+\subsection{Step 4: Transfer FreeRTOS Binary}
+
+After the ARM32 Linux system is running and SSH is accessible:
+
+\begin{lstlisting}[language=bash]
+scp -P 2223 /home/konton-otome/phd/linux_kvm_setup/freertos_image.bin root@localhost:/home/
+\end{lstlisting}
+
+\section{Alternative File Transfer Methods}
+
+\subsection{Method 1: Mount qcow2 Image (Pre-boot)}
+
+\begin{lstlisting}[language=bash]
+# Create mount point
+sudo mkdir -p /mnt/arm32-rootfs
+
+# Mount the qcow2 image
+sudo modprobe nbd max_part=8
+sudo qemu-nbd --connect=/dev/nbd0 image.qcow2
+sudo mount /dev/nbd0p1 /mnt/arm32-rootfs
+
+# Copy FreeRTOS binary
+sudo cp /home/konton-otome/phd/linux_kvm_setup/freertos_image.bin \
+       /mnt/arm32-rootfs/home/
+
+# Unmount
+sudo umount /mnt/arm32-rootfs
+sudo qemu-nbd --disconnect /dev/nbd0
+\end{lstlisting}
+
+\subsection{Method 2: Additional Virtual Drive}
+
+Add the following options to the QEMU command:
+
+\begin{lstlisting}[language=bash]
+-drive file=fat:rw:/home/konton-otome/phd/linux_kvm_setup,format=raw,id=usbdrive \
+-device usb-storage,drive=usbdrive
+\end{lstlisting}
+
+\section{System Control}
+
+\subsection{Exit QEMU}
+Press \texttt{Ctrl+A} then \texttt{X} to exit QEMU.
+
+\subsection{System Shutdown}
+From within the ARM32 Linux system:
+\begin{lstlisting}[language=bash]
+shutdown -h now
+\end{lstlisting}
+
+\section{Next Steps}
+
+Once the ARM32 Linux system is running with the FreeRTOS binary available:
+
+\begin{enumerate}
+    \item Install QEMU within the ARM32 Linux system
+    \item Configure nested virtualization for FreeRTOS
+    \item Run FreeRTOS as a nested guest
+    \item Collect performance and behavior data
+    \item Compare with Stack 1 (seL4) results
+\end{enumerate}
+
+\section{Architecture Verification}
+
+\subsection{Consistency Check}
+\begin{itemize}
+    \item \textbf{FreeRTOS Binary}: ARM32 (cortex-a15 compatible)
+    \item \textbf{Linux Host}: ARM32 (cortex-a15)
+    \item \textbf{Nested Guest}: ARM32 (cortex-a15)
+\end{itemize}
+
+This ensures architectural consistency for meaningful hypervisor comparison research.
+
+\subsection{Research Benefits}
+\begin{itemize}
+    \item \textbf{Same Guest Binary}: Identical FreeRTOS across both stacks
+    \item \textbf{Same Host Architecture}: ARM32 cortex-a15 consistency
+    \item \textbf{Controlled Environment}: Isolated comparison conditions
+    \item \textbf{True Hypervisor Comparison}: seL4 vs Linux kernel approaches
+\end{itemize}
+
+\section{Troubleshooting}
+
+\subsection{Common Issues}
+\begin{itemize}
+    \item \textbf{Port Conflicts}: Ensure port 2223 is not in use
+    \item \textbf{SSH Keys}: Use password authentication initially
+    \item \textbf{Disk Space}: Monitor available space in ARM32 system
+    \item \textbf{Architecture Mismatch}: Verify ARM32 consistency
+\end{itemize}
+
+\subsection{Verification Commands}
+\begin{lstlisting}[language=bash]
+# Check architecture
+uname -m
+file /home/freertos_image.bin
+
+# Check available space
+df -h
+
+# Verify QEMU installation
+which qemu-system-arm
+\end{lstlisting}
+
+\end{document}

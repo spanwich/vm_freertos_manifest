@@ -23,12 +23,28 @@ Your custom FreeRTOS research code is located in:
 
 **Root Cause**: CMake's `execute_process` with `-E env` doesn't properly inherit environment variables in the bash tool context, causing the CAmkES parser to fail silently during AST generation.
 
-**Solution**: Always export PYTHONPATH before running any seL4/CAmkES build commands:
+**CRITICAL DISCOVERY**: Environment variables do NOT persist between separate bash tool commands. Each tool invocation is a separate session.
+
+**Solution**: Always chain environment setup with build commands using `&&` in a SINGLE command:
 ```bash
-export PYTHONPATH=/home/konton-otome/phd/camkes-vm-examples/projects/camkes-tool:/home/konton-otome/phd/camkes-vm-examples/projects/capdl/python-capdl-tool
+source ../../sel4-dev-env/bin/activate && export PYTHONPATH=/home/konton-otome/phd/camkes-vm-examples/projects/camkes-tool:/home/konton-otome/phd/camkes-vm-examples/projects/capdl/python-capdl-tool && ../init-build.sh [options]
 ```
 
-This ensures all subprocesses can import CAmkES Python modules correctly.
+**WRONG APPROACH** (will fail):
+```bash
+# This doesn't work in Claude Code bash tool:
+source ../../sel4-dev-env/bin/activate
+export PYTHONPATH=/home/konton-otome/phd/camkes-vm-examples/projects/camkes-tool:/home/konton-otome/phd/camkes-vm-examples/projects/capdl/python-capdl-tool
+../init-build.sh [options]  # This command will not have the environment from above
+```
+
+**CORRECT APPROACH**:
+```bash
+# All in one command chain - this works:
+source ../../sel4-dev-env/bin/activate && export PYTHONPATH=/home/konton-otome/phd/camkes-vm-examples/projects/camkes-tool:/home/konton-otome/phd/camkes-vm-examples/projects/capdl/python-capdl-tool && ../init-build.sh [options]
+```
+
+This ensures the environment persists throughout the entire command chain and all subprocesses can import CAmkES Python modules correctly.
 
 ### Python Environment Setup (REQUIRED)
 ```bash
@@ -47,40 +63,37 @@ cd camkes-vm-examples
 # Create and enter build directory
 mkdir build && cd build
 
-# Activate Python environment
-source ../../sel4-dev-env/bin/activate
-
-# For Claude Code bash tool, export PYTHONPATH
-export PYTHONPATH=/home/konton-otome/phd/camkes-vm-examples/projects/camkes-tool:/home/konton-otome/phd/camkes-vm-examples/projects/capdl/python-capdl-tool
-
+# With PYTHONPATH set in ~/.claude/settings.json, commands are simpler:
 # Initialize build system for your custom FreeRTOS VM (AArch64)
-../init-build.sh -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DLibUSB=OFF
-
-# Initialize build system for standard examples (AArch64)
-../init-build.sh -DCAMKES_VM_APP=vm_minimal -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DAARCH64=1
+source ../../sel4-dev-env/bin/activate && ../init-build.sh -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DLibUSB=OFF
 
 # Build the project
-ninja
+source ../../sel4-dev-env/bin/activate && ninja
 ```
+
+**CURRENT ISSUE**: There is still an underlying AST generation problem that needs to be resolved. The commands above will fail during configuration phase with "Failed to generate ast.pickle" error.
 
 ### Common Build Variants
 ```bash
-# Always activate Python environment first
-source ../../sel4-dev-env/bin/activate
-
-# For Claude Code bash tool, export PYTHONPATH
-export PYTHONPATH=/home/konton-otome/phd/camkes-vm-examples/projects/camkes-tool:/home/konton-otome/phd/camkes-vm-examples/projects/capdl/python-capdl-tool
+# With PYTHONPATH set in ~/.claude/settings.json, commands are simplified:
 
 # AArch64 builds (recommended) - USB disabled to avoid header errors
-../init-build.sh -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DLibUSB=OFF
+source ../../sel4-dev-env/bin/activate && ../init-build.sh -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DLibUSB=OFF
 
-# Debug builds  
-../init-build.sh -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DLibUSB=OFF -DRELEASE=OFF
+# Debug builds
+source ../../sel4-dev-env/bin/activate && ../init-build.sh -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DLibUSB=OFF -DRELEASE=OFF
 
 # Other VM applications
-../init-build.sh -DCAMKES_VM_APP=vm_minimal -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DAARCH64=1
-../init-build.sh -DCAMKES_VM_APP=vm_multi -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DAARCH64=1
+source ../../sel4-dev-env/bin/activate && ../init-build.sh -DCAMKES_VM_APP=vm_minimal -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DAARCH64=1
+
+# Clean and rebuild
+source ../../sel4-dev-env/bin/activate && ninja clean && ninja
+
+# Reconfigure build
+source ../../sel4-dev-env/bin/activate && rm -rf * && ../init-build.sh [options]
 ```
+
+**NOTE**: All commands above will currently fail due to unresolved AST generation issue.
 
 ### Running and Testing
 ```bash

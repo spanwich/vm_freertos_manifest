@@ -1,85 +1,145 @@
-# Practical Guides and Documentation
+# FreeRTOS Hypervisor Integration Guides
 
 ## Overview
 
-This directory contains practical implementation and usage guides for reproducing and using the FreeRTOS-seL4 database-backed memory debugging system.
+This directory contains comprehensive guides for running FreeRTOS under different hypervisor environments, along with debugging and analysis methodologies.
 
-## Documents
+## 📋 **Primary Hypervisor Guides**
 
-### detailed-debugging-steps.md
-**Comprehensive Step-by-Step Debugging Procedures**
+### 1. freertos-linux-qemu-setup-guide.md ✅ **RECOMMENDED FOR WORKING FREERTOS**
+**Complete Linux QEMU Setup Guide**
 
-- **Purpose**: Complete reproduction workflow from environment setup to final analysis
-- **Target**: Researchers and developers wanting to reproduce the work
+- **Status**: ✅ **FULLY WORKING**
+- **Purpose**: Run FreeRTOS successfully with complete task scheduler support
+- **Key Feature**: No "Page Fault at PC: 0x8" errors
+- **Target**: Developers wanting immediate FreeRTOS functionality
 - **Contents**:
-  - Prerequisites and system requirements
-  - Environment setup with exact commands
-  - Build instructions for FreeRTOS and seL4
-  - Database initialization procedures
-  - QEMU configuration and launch
-  - Recording workflows with expected outputs
-  - Analysis procedures and troubleshooting
-  - SQL query examples for advanced analysis
-  - Validation procedures and expected results
+  - Quick start commands
+  - Step-by-step setup instructions
+  - Debugging interface configuration
+  - Success verification procedures
+  - Troubleshooting common issues
+
+### 2. freertos-sel4-vm-complete-setup-guide.md ⚠️ **RESEARCH VERSION**
+**Complete seL4 VM Integration Guide**
+
+- **Status**: ⚠️ **PARTIAL - Known Limitations**
+- **Purpose**: FreeRTOS integration with formally verified seL4 microkernel
+- **Known Issue**: "Page Fault at PC: 0x8" prevents task scheduling
+- **Target**: Researchers working on secure virtualization
+- **Contents**:
+  - seL4/CAmkES environment setup
+  - FreeRTOS binary integration
+  - Memory layout configuration
+  - Current limitations and workarounds
+  - Complete CAmkES configuration reference
+
+## 📊 **Analysis and Debugging Guides**
+
+### arm-exception-vector-analysis-guide.md
+**ARM Exception Vector Debug Methodology**
+
+- **Purpose**: Step-by-step debugging approach for exception vector issues
+- **Target**: Researchers analyzing hypervisor compatibility
+- **Contents**:
+  - Database snapshot recording procedures
+  - Memory analysis techniques
+  - Exception vector verification
+  - Root cause identification methods
+
+### linux-kvm-freertos-comparison-setup.md
+**Hypervisor Comparison Setup**
+
+- **Purpose**: Set up Linux KVM environment for hypervisor comparison
+- **Target**: Researchers performing comparative analysis
+- **Contents**:
+  - Linux KVM configuration
+  - Evidence collection procedures
+  - Memory access verification
+  - Comparison methodology
+
+## 📁 **Supporting Documentation**
 
 ### DATABASE_SNAPSHOT_GUIDE.md
-**Database System Usage Guide**
+**Database-Backed Memory Analysis**
 
-- **Purpose**: Detailed guide for using the database-backed recording system
-- **Target**: Users of the memory snapshot database system
+- **Purpose**: Advanced memory debugging using database recording
+- **Target**: Users needing sophisticated memory analysis
 - **Contents**:
-  - Quick start procedures
-  - Database schema explanation
-  - Recording workflows
-  - Analysis capabilities
-  - Advanced usage patterns
-  - Performance considerations
-  - Integration with existing tools
+  - Database system setup
+  - Memory snapshot recording
+  - SQL-based analysis queries
+  - Pattern analysis techniques
+
+### detailed-debugging-steps.md
+**Comprehensive Debugging Procedures**
+
+- **Purpose**: Complete debugging methodology for complex issues
+- **Target**: Researchers and advanced developers
+- **Contents**:
+  - Environment setup procedures
+  - Build configuration details
+  - Advanced debugging techniques
+  - Validation procedures
 
 ### HEX_DUMP_USAGE_GUIDE.md
-**Memory Hex Dump Capture Guide**
+**Raw Memory Analysis Guide**
 
-- **Purpose**: Guide for capturing and analyzing memory hex dumps
-- **Target**: Users needing raw memory analysis capabilities
+- **Purpose**: Direct memory analysis using hex dumps
+- **Target**: Users needing low-level memory inspection
 - **Contents**:
   - QEMU monitor integration
-  - Hex dump capture procedures
-  - File saving and organization
+  - Memory capture procedures
   - Analysis techniques
-  - Integration with pattern painting
 
-### README-reproduction-steps.md
-**Quick Reproduction Steps**
+## 🎯 **Quick Decision Guide**
 
-- **Purpose**: Fast-track guide for quick system setup and testing
-- **Target**: Users who need rapid setup for testing or demonstration
-- **Contents**:
-  - Minimal setup requirements
-  - Essential build steps
-  - Quick testing procedures
-  - Basic validation
+### **Want FreeRTOS to work immediately?**
+→ Use `freertos-linux-qemu-setup-guide.md`
+
+### **Want to research seL4 formal verification?**
+→ Use `freertos-sel4-vm-complete-setup-guide.md` (be aware of current limitations)
+
+### **Want to understand the technical differences?**
+→ Read both guides and the comparison analysis files
+
+### **Want to debug memory issues?**
+→ Use `arm-exception-vector-analysis-guide.md` and `DATABASE_SNAPSHOT_GUIDE.md`
+
+## 📊 **Feature Comparison**
+
+| Feature | Linux QEMU | seL4 VM |
+|---------|-------------|---------|
+| **Task Scheduler** | ✅ Working | ❌ Fails (Page Fault at PC: 0x8) |
+| **Context Switching** | ✅ Full Support | ❌ RFEIA instruction fails |
+| **ARM Exception Vectors** | ✅ Present (0x0-0x1C) | ❌ Missing |
+| **Multitasking** | ✅ Complete | ❌ Single task only |
+| **Development Ready** | ✅ Yes | ❌ Research phase |
+| **Formal Verification** | ❌ No | ✅ Yes |
+| **Security Guarantees** | ❌ Standard | ✅ Mathematical proofs |
 
 ## Usage by Role
 
 ### 🎓 **Researchers**
-1. Start with **detailed-debugging-steps.md** for complete understanding
-2. Use **DATABASE_SNAPSHOT_GUIDE.md** for advanced analysis
-3. Reference **HEX_DUMP_USAGE_GUIDE.md** for raw memory analysis
+1. Start with **freertos-linux-qemu-setup-guide.md** to see working system
+2. Compare with **freertos-sel4-vm-complete-setup-guide.md** to understand issues
+3. Use **arm-exception-vector-analysis-guide.md** for root cause analysis
+4. Apply **DATABASE_SNAPSHOT_GUIDE.md** for advanced memory analysis
 
 ### 👩‍💻 **Developers**
-1. Use **README-reproduction-steps.md** for quick setup
-2. Follow **detailed-debugging-steps.md** for comprehensive implementation
-3. Integrate with **DATABASE_SNAPSHOT_GUIDE.md** for data analysis
+1. Use **freertos-linux-qemu-setup-guide.md** for immediate development
+2. Reference **freertos-sel4-vm-complete-setup-guide.md** for seL4 integration
+3. Apply debugging guides for troubleshooting
 
 ### 🏫 **Students**
-1. Begin with **README-reproduction-steps.md** to understand basics
-2. Progress to **detailed-debugging-steps.md** for full methodology
-3. Practice with **HEX_DUMP_USAGE_GUIDE.md** for hands-on experience
+1. Begin with **freertos-linux-qemu-setup-guide.md** to understand basic concepts
+2. Study **freertos-sel4-vm-complete-setup-guide.md** for complex integration
+3. Practice with debugging guides for hands-on experience
 
 ### 🔬 **PhD Candidates**
-1. Study **detailed-debugging-steps.md** for methodology understanding
-2. Use **DATABASE_SNAPSHOT_GUIDE.md** for research data collection
-3. Apply **HEX_DUMP_USAGE_GUIDE.md** for detailed memory analysis
+1. Analyze both hypervisor approaches for research comparison
+2. Use debugging guides for systematic investigation methodology
+3. Apply database tools for comprehensive data collection
 
 ## Document Relationships
 

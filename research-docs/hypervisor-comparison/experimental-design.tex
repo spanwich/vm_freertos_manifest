@@ -1,0 +1,621 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage[margin=2.5cm]{geometry}
+
+\title{Hypervisor State Comparison: Linux vs seL4 for FreeRTOS Virtualization}
+\author{PhD Research Project}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document outlines an experimental design to compare the initialization state differences between Linux and seL4 hypervisors when hosting the same FreeRTOS binary. The research employs a triangulation methodology to identify what hardware and software state configurations may be causing differences in FreeRTOS behavior under different hypervisor environments. Three implementation approaches are analyzed with detailed pros and cons to determine the optimal experimental strategy.
+\end{abstract}
+
+\section{Introduction}
+
+\subsection{Research Context}
+Recent successful integration of FreeRTOS virtualization on seL4 microkernel has demonstrated that formally verified hypervisors can support real-time operating systems. However, subtle differences in hypervisor initialization may affect guest OS behavior in ways that are not immediately apparent.
+
+\subsection{Research Question}
+\textbf{Primary Question:} What initialization state differences exist between Linux and seL4 as hypervisors when hosting the same FreeRTOS binary?
+
+\textbf{Secondary Questions:}
+\begin{itemize}
+    \item Do different hypervisors configure the Generic Interrupt Controller (GIC) differently?
+    \item Are Memory Management Unit (MMU) and page table configurations identical?
+    \item Does CPU privilege level and register state differ between hypervisors?
+    \item Are ARM generic timers initialized to the same state?
+    \item Do cache configurations (L1/L2 data/instruction caches) match?
+\end{itemize}
+
+\subsection{Methodology Rationale}
+By comparing FreeRTOS execution under two different hypervisors on identical hardware platforms, we can isolate hypervisor-specific initialization differences. This triangulation approach will reveal what state seL4 VM might be missing compared to Linux virtualization.
+
+\section{Experimental Design}
+
+\subsection{Platform Consistency Requirements}
+To ensure valid comparison, all experiments must use identical platform configurations:
+
+\begin{itemize}
+    \item \textbf{Hardware Platform:} QEMU ARM virt machine (\texttt{qemu-system-arm -M virt})
+    \item \textbf{CPU Model:} ARM Cortex-A15 or Cortex-A53 (consistent across tests)
+    \item \textbf{Memory Layout:} Base address 0x40000000, 512MB allocation
+    \item \textbf{UART Configuration:} PL011 UART at 0x09000000
+    \item \textbf{Interrupt Controller:} ARM GICv2 configuration
+    \item \textbf{FreeRTOS Binary:} Identical \texttt{freertos\_image.bin} used in both scenarios
+\end{itemize}
+
+\subsection{Test Scenarios}
+
+\subsubsection{Scenario A: FreeRTOS under Linux Hypervisor}
+Linux kernel with virtualization support hosts the FreeRTOS binary using one of three implementation approaches (detailed in Section~\ref{sec:approaches}).
+
+\subsubsection{Scenario B: FreeRTOS under seL4 (Baseline)}
+Existing working seL4 + CAmkES VM configuration serves as the reference implementation. Same QEMU platform and FreeRTOS binary as Scenario A.
+
+\subsection{Comparison Metrics}
+
+\subsubsection{Hardware State Analysis}
+\begin{itemize}
+    \item \textbf{CPU Registers:} CPSR, SCTLR, TTBR0/1, DACR, etc.
+    \item \textbf{GIC Configuration:} Distributor registers, CPU interface state, interrupt priorities
+    \item \textbf{MMU State:} Page table base addresses, domain settings, memory protection
+    \item \textbf{Cache Configuration:} L1/L2 cache enable state, cache maintenance operations
+    \item \textbf{Timer Setup:} ARM generic timer frequency, enable state, interrupt configuration
+\end{itemize}
+
+\subsubsection{Memory Layout Analysis}
+\begin{itemize}
+    \item \textbf{Virtual Memory Mapping:} Address translation differences
+    \item \textbf{Page Table Structure:} PTE permissions, memory type attributes
+    \item \textbf{Memory Protection:} Access permissions for code/data/device regions
+    \item \textbf{Device Memory Regions:} MMIO mapping configuration
+\end{itemize}
+
+\subsubsection{Interrupt Configuration Analysis}
+\begin{itemize}
+    \item \textbf{GIC Distributor:} Interrupt enable/disable state, priority configuration
+    \item \textbf{GIC CPU Interface:} Priority mask, interrupt acknowledgment setup
+    \item \textbf{Interrupt Routing:} Which interrupts are routed to which CPU interfaces
+    \item \textbf{Timer Interrupts:} ARM generic timer interrupt configuration
+\end{itemize}
+
+\section{Implementation Approaches}
+\label{sec:approaches}
+
+\subsection{Option 1: Linux + QEMU User Mode Emulation}
+
+\subsubsection{Implementation Description}
+Boot a minimal Linux system, then use QEMU's user-mode emulation (\texttt{qemu-arm}) to execute the FreeRTOS binary within the Linux userspace environment.
+
+\subsubsection{Detailed Implementation Steps}
+\begin{enumerate}
+    \item Boot minimal Linux kernel (Buildroot or Alpine Linux)
+    \item Install QEMU user-mode emulation tools
+    \item Map FreeRTOS binary to appropriate memory location
+    \item Execute: \texttt{qemu-arm -cpu cortex-a15 freertos\_image.bin}
+    \item Capture execution behavior and state
+\end{enumerate}
+
+\subsubsection{Pros}
+\begin{itemize}
+    \item \textbf{Simplicity:} Fastest to implement and debug
+    \item \textbf{Tooling:} Excellent debugging support through QEMU
+    \item \textbf{Isolation:} User-mode emulation provides controlled environment
+    \item \textbf{Reproducibility:} Easy to script and automate
+    \item \textbf{Safety:} Cannot crash host system
+    \item \textbf{Portability:} Works on any Linux system with QEMU
+    \item \textbf{State Inspection:} Can examine emulated CPU state easily
+\end{itemize}
+
+\subsubsection{Cons}
+\begin{itemize}
+    \item \textbf{Abstraction Layer:} QEMU user-mode adds emulation layer
+    \item \textbf{Limited Hardware Access:} Cannot examine real GIC/MMU state
+    \item \textbf{Syscall Translation:} FreeRTOS system calls translated through Linux
+    \item \textbf{Memory Management:} Uses Linux virtual memory, not bare-metal
+    \item \textbf{Interrupt Handling:} QEMU translates interrupts to signals
+    \item \textbf{Timer Differences:} Uses Linux timer services instead of hardware timers
+    \item \textbf{Privilege Levels:} Runs in user mode, not privileged ARM modes
+    \item \textbf{Cache Behavior:} Linux cache management affects FreeRTOS execution
+\end{itemize}
+
+\subsection{Option 2: Linux + Custom Loader}
+
+\subsubsection{Implementation Description}
+Create a minimal Linux kernel module or userspace program that directly loads FreeRTOS binary to physical memory, sets up minimal CPU state, and transitions execution to FreeRTOS entry point.
+
+\subsubsection{Detailed Implementation Steps}
+\begin{enumerate}
+    \item Boot minimal Linux with custom kernel module support
+    \item Implement kernel module or userspace loader with:
+        \begin{itemize}
+            \item Physical memory mapping (\texttt{ioremap} or \texttt{/dev/mem})
+            \item CPU state setup (registers, MMU, cache)
+            \item GIC configuration matching seL4 expectations
+            \item Direct jump to FreeRTOS entry point (0x40000000)
+        \end{itemize}
+    \item Capture CPU/hardware state before and after transition
+    \item Compare state dumps with seL4 VM initialization
+\end{enumerate}
+
+\subsubsection{Pros}
+\begin{itemize}
+    \item \textbf{Hardware Access:} Direct access to GIC, MMU, and CPU registers
+    \item \textbf{State Control:} Full control over CPU state before FreeRTOS execution
+    \item \textbf{Realistic Simulation:} Closely mimics hypervisor behavior
+    \item \textbf{Debugging Capability:} Can insert state dumps at any transition point
+    \item \textbf{Flexibility:} Can experiment with different initialization sequences
+    \item \textbf{Bare Metal Transition:} Can transition from supervised to bare-metal mode
+    \item \textbf{Memory Management:} Direct control over physical memory layout
+    \item \textbf{Interrupt Configuration:} Can configure GIC identically to seL4
+\end{itemize}
+
+\subsubsection{Cons}
+\begin{itemize}
+    \item \textbf{Complexity:} Requires kernel module development and low-level programming
+    \item \textbf{System Stability:} Kernel module bugs can crash entire system
+    \item \textbf{Platform Dependencies:} May require platform-specific MMU/GIC knowledge
+    \item \textbf{Debugging Difficulty:} Kernel debugging more complex than userspace
+    \item \textbf{Development Time:} Significant implementation effort required
+    \item \textbf{Security Risks:} Direct hardware access requires careful programming
+    \item \textbf{Linux Dependencies:} Still influenced by Linux kernel initialization
+    \item \textbf{State Contamination:} Linux may alter hardware state before handoff
+\end{itemize}
+
+\subsection{Option 3: Buildroot + Bare Metal Transition}
+
+\subsubsection{Implementation Description}
+Use Buildroot to create a minimal Linux system that initializes hardware completely, dumps comprehensive CPU/hardware state, transitions to bare-metal mode, and jumps to FreeRTOS with minimal Linux interference.
+
+\subsubsection{Detailed Implementation Steps}
+\begin{enumerate}
+    \item Build custom Buildroot image with:
+        \begin{itemize}
+            \item Minimal kernel with hardware initialization
+            \item Custom init program for state capture
+            \item Hardware debugging tools (devmem, register dump utilities)
+        \end{itemize}
+    \item Implement bare-metal transition sequence:
+        \begin{itemize}
+            \item Capture complete system state (CPU, GIC, MMU, timers)
+            \item Disable Linux services and interrupt handling
+            \item Reset MMU to identity mapping
+            \item Configure GIC for bare-metal operation
+            \item Jump to FreeRTOS entry point
+        \end{itemize}
+    \item Compare captured state with seL4 VM initialization
+\end{enumerate}
+
+\subsubsection{Pros}
+\begin{itemize}
+    \item \textbf{Complete State Visibility:} Most comprehensive hardware state analysis
+    \item \textbf{Minimal Interference:} Custom init minimizes Linux contamination
+    \item \textbf{Hardware Realism:} Closest to actual hypervisor handoff behavior
+    \item \textbf{Flexible Debugging:} Can capture state at multiple transition points
+    \item \textbf{Educational Value:} Reveals complete hardware initialization sequence
+    \item \textbf{Reproducible Builds:} Buildroot ensures consistent environment
+    \item \textbf{Full Control:} Complete control over Linux initialization process
+    \item \textbf{State Documentation:} Generates comprehensive state documentation
+\end{itemize}
+
+\subsubsection{Cons}
+\begin{itemize}
+    \item \textbf{Maximum Complexity:} Most complex implementation requiring multiple expertise areas
+    \item \textbf{Development Time:} Significant time investment for Buildroot customization
+    \item \textbf{Build Dependencies:} Complex build system with many dependencies
+    \item \textbf{Cross-compilation:} ARM cross-compilation complexity
+    \item \textbf{Debugging Challenges:} Bare-metal debugging without standard tools
+    \item \textbf{Hardware Specificity:} Highly platform-dependent implementation
+    \item \textbf{State Transition Risks:} Complex state transitions prone to errors
+    \item \textbf{Maintenance Overhead:} Custom builds require ongoing maintenance
+\end{itemize}
+
+\section{Recommended Approach}
+
+\subsection{Primary Recommendation: Option 2 (Linux + Custom Loader)}
+
+Based on the detailed analysis, \textbf{Option 2} provides the optimal balance of implementation complexity and research value:
+
+\subsubsection{Rationale}
+\begin{itemize}
+    \item \textbf{Direct Comparability:} Most similar to seL4 VM loading mechanism
+    \item \textbf{Manageable Complexity:} Achievable within reasonable development timeframe
+    \item \textbf{Hardware State Access:} Enables examination of critical CPU/GIC registers
+    \item \textbf{Debugging Capability:} Allows state dumps at key transition points
+    \item \textbf{Research Impact:} Directly addresses supervisor's triangulation suggestion
+\end{itemize}
+
+\subsubsection{Implementation Priority}
+\begin{enumerate}
+    \item Start with userspace implementation using \texttt{/dev/mem} for hardware access
+    \item If userspace limitations prevent adequate hardware access, escalate to kernel module
+    \item Focus on GIC and MMU state comparison as primary objectives
+    \item Document all state differences discovered during implementation
+\end{enumerate}
+
+\subsection{Fallback Strategy}
+If Option 2 proves too complex or time-consuming, implement \textbf{Option 1} as a rapid prototype to establish baseline comparison methodology, then evolve toward Option 2 for comprehensive analysis.
+
+\section{Expected Deliverables}
+
+\subsection{Implementation Artifacts}
+\begin{itemize}
+    \item Custom Linux loader (kernel module or userspace program)
+    \item Hardware state capture scripts
+    \item FreeRTOS execution comparison tools
+    \item Automated testing framework
+\end{itemize}
+
+\subsection{Analysis Reports}
+\begin{itemize}
+    \item Side-by-side hardware state comparison
+    \item CPU register difference analysis
+    \item GIC configuration comparison
+    \item MMU and memory protection analysis
+    \item Performance and timing characteristic comparison
+\end{itemize}
+
+\subsection{Research Outcomes}
+\begin{itemize}
+    \item Identification of seL4 VM initialization gaps
+    \item Recommendations for seL4 VM improvements
+    \item Documentation of hypervisor-specific requirements for FreeRTOS
+    \item Validation or refutation of current seL4 VM approach
+\end{itemize}
+
+\section{Success Criteria}
+
+\subsection{Minimum Success}
+\begin{itemize}
+    \item Execute identical FreeRTOS binary under both Linux and seL4 hypervisors
+    \item Capture and compare basic CPU register state
+    \item Identify at least 3 concrete differences in hardware initialization
+\end{itemize}
+
+\subsection{Full Success}
+\begin{itemize}
+    \item Comprehensive hardware state comparison (CPU, GIC, MMU, timers)
+    \item Root cause analysis of any FreeRTOS behavioral differences
+    \item Actionable recommendations for seL4 VM configuration improvements
+    \item Reproducible experimental framework for future hypervisor comparisons
+\end{itemize}
+
+\section{Risk Analysis and Mitigation}
+
+\subsection{Technical Risks}
+\begin{itemize}
+    \item \textbf{Hardware Access Limitations:} Mitigation through kernel module development
+    \item \textbf{Platform Dependencies:} Mitigation through careful QEMU configuration
+    \item \textbf{State Contamination:} Mitigation through minimal Linux configuration
+    \item \textbf{Debugging Complexity:} Mitigation through incremental development approach
+\end{itemize}
+
+\subsection{Timeline Risks}
+\begin{itemize}
+    \item \textbf{Implementation Complexity:} Mitigation through fallback to simpler approaches
+    \item \textbf{Debugging Time:} Mitigation through early prototype development
+    \item \textbf{Platform Issues:} Mitigation through proven QEMU ARM virt platform
+\end{itemize}
+
+\section{Focused ARM Exception Vector Analysis Implementation}
+
+\subsection{Problem Identification}
+
+Based on detailed analysis of the seL4 VM failure, the root cause has been identified as a missing ARM exception vector table configuration. FreeRTOS fails with a \textbf{Page Fault at PC: 0x8} during context switching, where 0x8 is the ARM Software Interrupt (SWI) vector address.
+
+\subsubsection{Failure Analysis}
+\begin{itemize}
+    \item \textbf{Location}: \texttt{vPortRestoreTaskContext()} in \texttt{portASM.S:199}
+    \item \textbf{Instruction}: \texttt{BX R1} where R1 = 0x8
+    \item \textbf{Expected}: R1 should contain valid task function address
+    \item \textbf{Actual}: R1 contains ARM SWI vector address (0x8)
+    \item \textbf{Cause}: seL4 VM doesn't provide ARM exception vectors for guest OS
+\end{itemize}
+
+\subsection{ARM Exception Vector Layout}
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|l|}
+\hline
+\textbf{Address} & \textbf{Offset} & \textbf{Exception Type} \\
+\hline
+0x00 & +0 & Reset Vector \\
+0x04 & +4 & Undefined Instruction \\
+\textbf{0x08} & \textbf{+8} & \textbf{Software Interrupt (SWI/SVC)} $\leftarrow$ \textbf{Failure Point} \\
+0x0C & +12 & Prefetch Abort \\
+0x10 & +16 & Data Abort \\
+0x14 & +20 & Reserved \\
+0x18 & +24 & IRQ \\
+0x1C & +28 & FIQ \\
+\hline
+\end{tabular}
+\caption{ARM Exception Vector Table Layout}
+\end{table}
+
+\subsection{Detailed Implementation Steps}
+
+\subsubsection{Phase 1: Linux KVM Reference Setup (Day 1)}
+
+\paragraph{Step 1.1: Download Minimal ARM Linux}
+\begin{lstlisting}[language=bash]
+# Create working directory
+mkdir -p linux_vm_comparison && cd linux_vm_comparison
+
+# Download Alpine Linux ARM images
+wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/armhf/\
+alpine-virt-3.19.1-armhf.iso
+
+# Extract kernel and initramfs
+mkdir alpine_extract && cd alpine_extract
+7z x ../alpine-virt-3.19.1-armhf.iso
+cp boot/vmlinuz-lts ../linux-kernel
+cp boot/initramfs-lts ../linux-initramfs.gz
+cd ..
+\end{lstlisting}
+
+\paragraph{Step 1.2: Boot Linux KVM on ARM virt Platform}
+\begin{lstlisting}[language=bash]
+# Boot Linux with identical platform configuration as seL4
+qemu-system-arm \
+  -M virt \
+  -cpu cortex-a15 \
+  -m 512M \
+  -kernel linux-kernel \
+  -initrd linux-initramfs.gz \
+  -append "console=ttyAMA0,38400 rdinit=/bin/sh" \
+  -nographic \
+  -netdev user,id=net0 \
+  -device virtio-net-device,netdev=net0
+\end{lstlisting}
+
+\paragraph{Step 1.3: Create FreeRTOS Vector Analysis Tool}
+\begin{lstlisting}[language=c]
+// vector_analyzer.c - Run inside Linux guest
+#include <stdio.h>
+#include <stdint.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+void analyze_vectors() {
+    int fd = open("/dev/mem", O_RDWR);
+    if (fd < 0) {
+        perror("Cannot open /dev/mem");
+        return;
+    }
+    
+    // Map exception vector region (0x0-0x1C)
+    uint32_t *vectors = mmap(0, 0x1000, PROT_READ, 
+                           MAP_SHARED, fd, 0x0);
+    
+    printf("=== ARM Exception Vector Analysis ===\n");
+    for(int i = 0; i < 8; i++) {
+        printf("Vector 0x%02x: 0x%08x\n", i*4, vectors[i]);
+    }
+    
+    // Read VBAR register (requires privileged access)
+    uint32_t vbar;
+    asm volatile("mrc p15, 0, %0, c12, c0, 0" : "=r"(vbar));
+    printf("VBAR = 0x%08x\n", vbar);
+    
+    munmap(vectors, 0x1000);
+    close(fd);
+}
+
+int main() {
+    analyze_vectors();
+    return 0;
+}
+\end{lstlisting}
+
+\paragraph{Step 1.4: Load and Execute FreeRTOS Binary}
+\begin{lstlisting}[language=bash]
+# Inside Linux guest - copy FreeRTOS binary
+# Transfer freertos_image.bin to guest filesystem
+
+# Load FreeRTOS to 0x40000000 and analyze state before execution
+./vector_analyzer  # Capture baseline state
+insmod freertos_loader.ko  # Custom kernel module to load FreeRTOS
+./vector_analyzer  # Capture state after Linux hypervisor setup
+\end{lstlisting}
+
+\subsubsection{Phase 2: Vector Table State Comparison (Day 2)}
+
+\paragraph{Step 2.1: Capture seL4 VM Vector State}
+\begin{lstlisting}[language=c]
+// Add to FreeRTOS main.c before scheduler start
+void debug_vector_state() {
+    uart_puts("=== seL4 VM Vector Analysis ===\r\n");
+    
+    uint32_t *vectors = (uint32_t*)0x0;
+    for(int i = 0; i < 8; i++) {
+        uart_puts("Vector 0x");
+        uart_hex(i*4);
+        uart_puts(": 0x");
+        uart_hex(vectors[i]);
+        uart_puts("\r\n");
+    }
+    
+    // Read VBAR register
+    uint32_t vbar;
+    asm volatile("mrc p15, 0, %0, c12, c0, 0" : "=r"(vbar));
+    uart_puts("VBAR = 0x");
+    uart_hex(vbar);
+    uart_puts("\r\n");
+}
+
+// Call before vTaskStartScheduler()
+int main() {
+    // ... existing FreeRTOS initialization ...
+    debug_vector_state();
+    vTaskStartScheduler();  // This will fail at vPortRestoreTaskContext
+}
+\end{lstlisting}
+
+\paragraph{Step 2.2: Side-by-Side Comparison}
+Create comparison table documenting the differences found.
+
+\subsubsection{Phase 3: seL4 VM Vector Configuration (Day 3-4)}
+
+\paragraph{Step 3.1: Identify seL4 VM Vector Configuration}
+\begin{lstlisting}[language=c]
+// Examine seL4 VM component configuration
+// File: projects/vm/components/VM_Arm/src/main.c
+
+// Look for ARM exception vector setup
+// Check if vm_install_vgic() configures exception vectors
+// Verify if seL4_ARM_VSpace_* calls map low memory region
+\end{lstlisting}
+
+\paragraph{Step 3.2: Implement Vector Table Support}
+\begin{lstlisting}[language=c]
+// Add to seL4 VM initialization
+// File: projects/vm-examples/apps/Arm/vm_freertos/qemu-arm-virt/devices.camkes
+
+assembly {
+    configuration {
+        // Add low memory mapping for exception vectors
+        vm0.untyped_mmios = [
+            "0x0:12",          // Exception vectors (4KB at 0x0)
+            "0x8040000:12",    // GIC Virtual CPU interface
+            "0x40000000:29",   // Guest RAM region (512MB)
+            "0x09000000:12",   // UART MMIO region
+        ];
+        
+        // Ensure vector region is mapped with execute permissions
+        vm0.vm_address_config = {
+            "ram_base" : "0x40000000",
+            "ram_paddr_base" : "0x40000000",
+            "ram_size" : "0x20000000",
+            "dtb_addr" : "0x4F000000",
+            "initrd_addr" : "0x4D700000",
+            "kernel_entry_addr" : "0x40000000",
+            // Add exception vector mapping
+            "vector_base" : "0x0",
+            "vector_size" : "0x1000"
+        };
+    }
+}
+\end{lstlisting}
+
+\paragraph{Step 3.3: Configure ARM Exception Handlers}
+\begin{lstlisting}[language=c]
+// Create minimal exception vector table for guest
+// File: projects/vm/components/VM_Arm/src/guest_vectors.S
+
+.section .vectors, "ax"
+.global guest_exception_vectors
+guest_exception_vectors:
+    ldr pc, =reset_handler          @ 0x00: Reset
+    ldr pc, =undefined_handler      @ 0x04: Undefined instruction  
+    ldr pc, =swi_handler           @ 0x08: Software interrupt
+    ldr pc, =prefetch_abort_handler @ 0x0C: Prefetch abort
+    ldr pc, =data_abort_handler    @ 0x10: Data abort
+    nop                            @ 0x14: Reserved
+    ldr pc, =irq_handler          @ 0x18: IRQ
+    ldr pc, =fiq_handler          @ 0x1C: FIQ
+
+// Minimal handlers that delegate to FreeRTOS
+swi_handler:
+    // Jump to FreeRTOS SWI handler
+    ldr pc, =FreeRTOS_SWI_Handler
+\end{lstlisting}
+
+\subsubsection{Phase 4: Testing and Validation (Day 5)}
+
+\paragraph{Step 4.1: Build and Test seL4 VM with Vector Support}
+\begin{lstlisting}[language=bash]
+# Rebuild seL4 VM with vector table support
+cd camkes-vm-examples/build
+ninja clean
+ninja
+
+# Test FreeRTOS execution
+./simulate
+
+# Expected output:
+# "=== seL4 VM Vector Analysis ==="
+# "Vector 0x08: 0x????????"  # Should now contain valid address
+# "VBAR = 0x00000000"
+# [FreeRTOS should progress past vPortRestoreTaskContext]
+\end{lstlisting}
+
+\paragraph{Step 4.2: Verify Context Switch Success}
+\begin{lstlisting}[language=c]
+// Add success checkpoint after vPortRestoreTaskContext
+// File: freertos_vexpress_a9/Source/portable/GCC/ARM_CA9/portASM.S
+
+vPortRestoreTaskContext:
+    // ... existing code ...
+    BX      R1              // This should now succeed
+    
+context_switch_success:
+    // Add debug output to confirm success
+    LDR     R0, =success_message
+    BL      uart_puts_asm
+    // Continue with task execution
+\end{lstlisting}
+
+\subsection{Expected Results and Success Criteria}
+
+\subsubsection{Linux KVM Reference Results}
+Expected vector table with valid handlers at all positions, particularly at 0x8 for SWI.
+
+\subsubsection{seL4 VM Before Fix}
+Expected unmapped or zero values at vector positions, causing the page fault at 0x8.
+
+\subsubsection{seL4 VM After Fix}
+Expected properly configured vector table with valid handlers, allowing FreeRTOS to successfully start.
+
+\subsection{Implementation Timeline}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|l|}
+\hline
+\textbf{Day} & \textbf{Duration} & \textbf{Tasks} \\
+\hline
+1 & 8 hours & Linux KVM setup, FreeRTOS loader, vector analysis \\
+2 & 4 hours & seL4 VM vector capture, side-by-side comparison \\
+3 & 8 hours & seL4 VM vector configuration implementation \\
+4 & 6 hours & Testing, debugging, refinement \\
+5 & 4 hours & Validation, documentation, final testing \\
+\hline
+\textbf{Total} & \textbf{30 hours} & \textbf{Complete apple-to-apple comparison} \\
+\hline
+\end{tabular}
+\caption{Implementation Timeline}
+\end{table}
+
+\subsection{Risk Mitigation}
+
+\begin{itemize}
+    \item \textbf{Linux KVM Access Issues}: Use Alpine Linux with \texttt{/dev/mem} access enabled
+    \item \textbf{VBAR Register Access}: Implement kernel module if userspace access insufficient  
+    \item \textbf{seL4 VM Configuration Complexity}: Start with minimal vector table, expand gradually
+    \item \textbf{Memory Mapping Conflicts}: Carefully coordinate low memory mapping with existing seL4 VM setup
+\end{itemize}
+
+This focused implementation provides the exact triangulation needed to identify and resolve the ARM exception vector configuration differences between Linux and seL4 hypervisors.
+
+\section{Conclusion}
+
+This experimental design provides a systematic approach to understanding hypervisor initialization differences between Linux and seL4 when hosting FreeRTOS. The triangulation methodology addresses the supervisor's insight about configuration state differences, while the focused ARM exception vector analysis provides a direct path to resolving the identified Page Fault at PC: 0x8 issue.
+
+The detailed implementation steps offer a practical, achievable approach that will generate actionable insights for improving seL4 VM configuration and advancing formally verified hypervisor research. The 5-day timeline balances thorough analysis with efficient execution, delivering concrete results for the PhD research objectives.
+
+\end{document}

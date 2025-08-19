@@ -1,0 +1,11 @@
+{
+  "timestamp": "2025-01-18T14:30:00.000000",
+  "hypervisor": "seL4 VM",
+  "system": "FreeRTOS ARM",
+  "data": {
+    "exception_table": "00000000: Cannot access memory",
+    "exception_instructions": "Cannot access memory at 0x0",
+    "cpu_registers": "R15=0000000c  (PC = Program Counter)\nPSR=000001da ---- A hyp32",
+    "memory_layout": "0000000000000000-0000000003ffffff (prio 0, romd): virt.flash0\n0000000040000000-00000000bfffffff (prio 0, ram): mach-virt.ram\n\nCRITICAL GAP: 0x00000000-0x0000001C (ARM exception vectors) - MISSING\nGuest RAM starts at: 0x40000000"
+  }
+}
