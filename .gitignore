@@ -52,3 +52,7 @@ linux_kvm_setup/
 
 # FreeRTOS nested virtualization
 nested-virt/
+
+linux_vm_comparison/
+
+linux_images/
