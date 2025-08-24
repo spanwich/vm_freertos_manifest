@@ -1,0 +1,451 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{booktabs}
+
+\geometry{margin=1in}
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\thepage}
+\lhead{CAmkES Build System Analysis}
+
+% Code listing styles
+\lstdefinestyle{cmake}{
+    language=bash,
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    frame=single,
+    backgroundcolor=\color{gray!10},
+    breaklines=true,
+    morekeywords={if,endif,set,include,EXISTS,message,FATAL_ERROR}
+}
+
+\lstdefinestyle{bash}{
+    language=bash,
+    basicstyle=\ttfamily\footnotesize,
+    backgroundcolor=\color{black!5},
+    frame=single,
+    breaklines=true
+}
+
+\title{CAmkES Build System Architecture:\\
+Critical Requirements and Lessons Learned}
+\author{PhD Research Documentation}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document provides a detailed analysis of the CAmkES build system architecture, documenting critical naming conventions and structural requirements discovered during VM-component communication implementation. The analysis reveals strict folder naming requirements and platform configuration dependencies that are essential for successful system compilation but not immediately obvious from standard documentation.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+The CAmkES (Component Architecture for Microkernel-based Embedded Systems) build system implements a sophisticated discovery and configuration mechanism that enforces strict conventions. During the implementation of VM-component UART communication, critical build system requirements were identified that significantly impact development workflow and project structure.
+
+\subsection{Problem Statement}
+
+Initial implementation attempts failed due to misunderstanding of the build system's folder naming requirements. The error manifested as:
+
+\begin{lstlisting}[style=bash]
+message(FATAL_ERROR "App does not exist for supported architecture")
+\end{lstlisting}
+
+Despite having correctly structured CAmkES files, the build system could not locate the application due to folder naming mismatches.
+
+\subsection{Research Methodology}
+
+The analysis involved:
+\begin{enumerate}
+\item Systematic examination of build script execution flow
+\item Analysis of CMake configuration discovery mechanisms
+\item Comparison with working reference implementations
+\item Documentation of correction procedures
+\end{enumerate}
+
+\section{Build System Architecture Analysis}
+
+\subsection{Execution Flow Overview}
+
+The CAmkES build system follows a multi-stage discovery and configuration process:
+
+\begin{enumerate}
+\item \textbf{init-build.sh} → Entry point script validation
+\item \textbf{CMake initialization} → Toolchain and cache configuration  
+\item \textbf{settings.cmake} → Application discovery and validation
+\item \textbf{Application settings} → Platform-specific configuration
+\item \textbf{Component resolution} → Individual component compilation
+\end{enumerate}
+
+\subsection{Critical Discovery Logic}
+
+The application discovery mechanism in \texttt{projects/vm-examples/settings.cmake} implements strict validation:
+
+\begin{lstlisting}[style=cmake, caption=Application existence validation]
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/apps/Arm/${CAMKES_VM_APP}")
+    set(AppArch "Arm" CACHE STRING "" FORCE)
+elseif(EXISTS "${CMAKE_CURRENT_LIST_DIR}/apps/x86/${CAMKES_VM_APP}")
+    set(AppArch "x86" CACHE STRING "" FORCE)
+else()
+    message(FATAL_ERROR "App does not exist for supported architecture")
+endif()
+\end{lstlisting}
+
+This logic requires exact string matching between the \texttt{CAMKES\_VM\_APP} parameter and the folder name.
+
+\subsection{Application Settings Inclusion}
+
+Following successful discovery, application-specific settings are included:
+
+\begin{lstlisting}[style=cmake, caption=Application settings inclusion]
+# Add VM application
+include("${CMAKE_CURRENT_LIST_DIR}/apps/Arm/${CAMKES_VM_APP}/settings.cmake")
+\end{lstlisting}
+
+This inclusion mechanism enforces the requirement for a \texttt{settings.cmake} file within each application folder.
+
+\section{Naming Convention Requirements}
+
+\subsection{Mandatory Folder Structure}
+
+The build system enforces a specific folder hierarchy:
+
+\begin{lstlisting}[style=bash, caption=Required folder structure]
+projects/vm-examples/apps/Arm/${CAMKES_VM_APP}/
+├── settings.cmake                    # Platform configurations (REQUIRED)
+├── ${CAMKES_VM_APP}.camkes          # Main assembly file (REQUIRED)  
+├── CMakeLists.txt                   # Build configuration (REQUIRED)
+├── ${PLATFORM}/                     # Platform-specific configs
+│   └── devices.camkes
+├── components/                      # Custom components
+├── overlay_files/                   # VM filesystem overlays
+└── vm_guest_test/                   # Test programs
+\end{lstlisting}
+
+\subsection{Parameter-Folder-File Relationship}
+
+The relationship between build parameters and file system structure is strictly enforced:
+
+\begin{table}[htbp]
+\centering
+\caption{Build Parameter to File System Mapping}
+\label{tab:parameter-mapping}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Build Parameter & Folder Name & Main File Name \\
+\midrule
+\texttt{-DCAMKES\_VM\_APP=vm\_echo\_test} & \texttt{vm\_echo\_test/} & \texttt{vm\_echo\_test.camkes} \\
+\texttt{-DCAMKES\_VM\_APP=vm\_minimal} & \texttt{vm\_minimal/} & \texttt{vm\_minimal.camkes} \\
+\texttt{-DCAMKES\_VM\_APP=vm\_serial\_server} & \texttt{vm\_serial\_server/} & \texttt{vm\_serial\_server.camkes} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Case Study: Correction Process}
+
+The original implementation had the following mismatch:
+
+\begin{lstlisting}[style=bash, caption=Original incorrect structure]
+# Build parameter
+-DCAMKES_VM_APP=vm_echo_test
+
+# Actual folder structure  
+apps/Arm/vm_serial_test/           # WRONG: folder name mismatch
+├── settings.cmake
+├── vm_echo_test.camkes           # Correct file name
+└── CMakeLists.txt
+\end{lstlisting}
+
+Correction required renaming the folder:
+
+\begin{lstlisting}[style=bash, caption=Correction command]
+mv apps/Arm/vm_serial_test apps/Arm/vm_echo_test
+\end{lstlisting}
+
+\section{Platform Configuration Requirements}
+
+\subsection{settings.cmake Structure}
+
+Each application must provide platform support configuration:
+
+\begin{lstlisting}[style=cmake, caption=Platform support structure in settings.cmake]
+# Define supported platforms
+set(supported "exynos5422;qemu-arm-virt")
+if(NOT "${PLATFORM}" IN_LIST supported)
+    message(FATAL_ERROR "PLATFORM: ${PLATFORM} not supported.
+         Supported: ${supported}")
+endif()
+
+# Platform-specific configurations
+if(${PLATFORM} STREQUAL "qemu-arm-virt")
+    set(QEMU_MEMORY "2048")
+    set(KernelArmCPU cortex-a53 CACHE STRING "" FORCE)
+    set(VmInitRdFile ON CACHE BOOL "" FORCE)
+    set(VmDtbFile ON CACHE BOOL "" FORCE)
+    set(VmPCISupport ON CACHE BOOL "" FORCE)
+    set(VmVirtioConsole ON CACHE BOOL "" FORCE)
+endif()
+\end{lstlisting}
+
+\subsection{Cross-VM Connector Requirements}
+
+For applications using cross-VM communication, specific feature flags must be enabled:
+
+\begin{lstlisting}[style=cmake, caption=Cross-VM connector feature flags]
+# Required for cross-VM dataports and events
+set(VmPCISupport ON CACHE BOOL "" FORCE)
+set(VmVirtioConsole ON CACHE BOOL "" FORCE)
+
+# Required for VM file system integration  
+set(VmInitRdFile ON CACHE BOOL "" FORCE)
+set(VmDtbFile ON CACHE BOOL "" FORCE)
+\end{lstlisting}
+
+\subsection{Platform-Specific Device Configuration}
+
+Each platform requires corresponding device configuration files:
+
+\begin{lstlisting}[style=bash, caption=Platform device configuration structure]
+${CAMKES_VM_APP}/
+├── qemu-arm-virt/
+│   └── devices.camkes           # QEMU ARM virtualization devices
+├── exynos5422/  
+│   └── devices.camkes           # Exynos5422 hardware devices
+└── tx2/
+    └── devices.camkes           # Tegra X2 hardware devices
+\end{lstlisting}
+
+\section{CMakeLists.txt Configuration}
+
+\subsection{Root Server Declaration}
+
+The \texttt{CMakeLists.txt} must correctly reference the main assembly file:
+
+\begin{lstlisting}[style=cmake, caption=Correct root server declaration]
+# Declare root server - filename must match folder name
+DeclareCAmkESRootserver(
+    vm_echo_test.camkes           # Must match ${CAMKES_VM_APP}.camkes
+    CPP_FLAGS
+    ${cpp_flags}
+    CPP_INCLUDES
+    ${CAMKES_VM_DIR}/components/VM_Arm
+    ${CMAKE_CURRENT_SOURCE_DIR}/components
+)
+\end{lstlisting}
+
+\subsection{Component Integration}
+
+Custom components must be properly integrated into the build system:
+
+\begin{lstlisting}[style=cmake, caption=Component subdirectory inclusion]
+# Add custom components
+add_subdirectory(components/EchoComponent)
+add_subdirectory(components/TestProcessor)
+\end{lstlisting}
+
+\subsection{VM Guest Integration}
+
+Test programs for VM guests require build-time compilation and filesystem integration:
+
+\begin{lstlisting}[style=cmake, caption=VM guest program integration]
+# Build test clients
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/vm_guest_test/echo_latency_test
+    COMMAND gcc -Wall -O2 -o ${CMAKE_CURRENT_BINARY_DIR}/vm_guest_test/echo_latency_test 
+            ${CMAKE_CURRENT_SOURCE_DIR}/vm_guest_test/echo_latency_test.c
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/vm_guest_test/echo_latency_test.c
+    COMMENT "Building VM echo latency test"
+)
+
+# Add to VM filesystem overlay
+AddFileToOverlayDir(
+    "echo_latency_test"
+    ${CMAKE_CURRENT_BINARY_DIR}/vm_guest_test/echo_latency_test
+    "usr/bin"
+    overlay
+)
+\end{lstlisting}
+
+\section{Error Patterns and Diagnostics}
+
+\subsection{Common Build Failures}
+
+Several error patterns indicate specific configuration problems:
+
+\begin{table}[htbp]
+\centering
+\caption{Build Error Patterns and Causes}
+\label{tab:error-patterns}
+\begin{tabular}{@{}p{6cm}p{8cm}@{}}
+\toprule
+Error Message & Root Cause \\
+\midrule
+\texttt{App does not exist for supported architecture} & Folder name does not match \texttt{CAMKES\_VM\_APP} parameter \\
+\texttt{PLATFORM: X not supported} & Missing platform in \texttt{settings.cmake} supported list \\
+\texttt{Cannot find vm\_X.camkes} & Main assembly file name mismatch \\
+\texttt{Failed to generate ast.pickle} & Missing component imports or syntax errors \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Diagnostic Procedures}
+
+Systematic diagnosis of build failures:
+
+\begin{enumerate}
+\item \textbf{Verify folder naming}: Ensure exact match between parameter and folder
+\item \textbf{Check platform support}: Verify platform in \texttt{settings.cmake} supported list
+\item \textbf{Validate file references}: Confirm CMakeLists.txt references correct .camkes file
+\item \textbf{Examine import paths}: Verify all component imports are accessible
+\end{enumerate}
+
+\section{Best Practices and Recommendations}
+
+\subsection{Development Workflow}
+
+Recommended approach for new CAmkES applications:
+
+\begin{enumerate}
+\item \textbf{Choose consistent naming}: Use same name for folder, parameter, and main .camkes file
+\item \textbf{Copy reference implementation}: Start with working application as template
+\item \textbf{Incremental modification}: Make small changes and test build frequently
+\item \textbf{Platform-first approach}: Ensure platform support before adding complexity
+\end{enumerate}
+
+\subsection{Naming Convention Standards}
+
+Establish consistent naming patterns:
+
+\begin{lstlisting}[style=bash, caption=Recommended naming pattern]
+# Application name: descriptive_functional_name
+APPLICATION_NAME="vm_echo_test"
+
+# Build parameter
+-DCAMKES_VM_APP=${APPLICATION_NAME}
+
+# Folder structure  
+apps/Arm/${APPLICATION_NAME}/
+├── settings.cmake
+├── ${APPLICATION_NAME}.camkes
+└── CMakeLists.txt
+\end{lstlisting}
+
+\subsection{Documentation Requirements}
+
+Each application should include comprehensive documentation:
+
+\begin{itemize}
+\item \textbf{Purpose and functionality description}
+\item \textbf{Supported platforms and requirements}
+\item \textbf{Build and deployment instructions}  
+\item \textbf{Component interaction diagrams}
+\item \textbf{Testing and validation procedures}
+\end{itemize}
+
+\section{Integration with Existing Applications}
+
+\subsection{Reference Implementation Analysis}
+
+Existing applications provide proven patterns for configuration:
+
+\begin{table}[htbp]
+\centering
+\caption{Reference Implementation Patterns}
+\label{tab:reference-patterns}
+\begin{tabular}{@{}lp{8cm}@{}}
+\toprule
+Application & Key Features \\
+\midrule
+\texttt{vm\_minimal} & Basic VM with minimal configuration, supports multiple platforms \\
+\texttt{vm\_serial\_server} & SerialServer integration, virtio console support \\
+\texttt{vm\_cross\_connector} & Cross-VM communication examples, dataport usage \\
+\texttt{vm\_introspect} & Advanced cross-VM debugging and introspection \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Configuration Inheritance}
+
+New applications can inherit proven configurations:
+
+\begin{lstlisting}[style=cmake, caption=Configuration inheritance pattern]
+# Base configuration from vm_minimal
+set(supported "tk1;tx1;tx2;exynos5422;qemu-arm-virt;odroidc2;zcu102")
+
+# Extended configuration for cross-VM features  
+if(${PLATFORM} STREQUAL "qemu-arm-virt")
+    # Inherit base settings
+    set(QEMU_MEMORY "2048")
+    set(KernelArmCPU cortex-a53 CACHE STRING "" FORCE)
+    set(VmInitRdFile ON CACHE BOOL "" FORCE)
+    
+    # Add cross-VM specific features
+    set(VmPCISupport ON CACHE BOOL "" FORCE)
+    set(VmVirtioConsole ON CACHE BOOL "" FORCE)
+endif()
+\end{lstlisting}
+
+\section{Future Considerations}
+
+\subsection{Build System Evolution}
+
+Potential improvements to the CAmkES build system:
+
+\begin{itemize}
+\item \textbf{Enhanced error reporting}: More specific error messages for common misconfigurations
+\item \textbf{Template generation}: Automated application scaffolding tools
+\item \textbf{Configuration validation}: Static analysis of application configurations
+\item \textbf{Documentation integration}: Automatic documentation generation from configurations
+\end{itemize}
+
+\subsection{Development Tool Integration}
+
+Integration opportunities with modern development tools:
+
+\begin{itemize}
+\item \textbf{IDE plugins}: Integration with Visual Studio Code and other IDEs
+\item \textbf{Build system generators}: CMake preset generation for common configurations
+\item \textbf{Continuous integration}: Automated testing of multiple platform configurations
+\item \textbf{Debugging tools}: Enhanced debugging support for cross-VM applications
+\end{itemize}
+
+\section{Conclusion}
+
+The CAmkES build system implements sophisticated application discovery and configuration mechanisms that require strict adherence to naming conventions and structural requirements. Understanding these requirements is crucial for successful development of seL4/CAmkES applications.
+
+\subsection{Key Findings}
+
+\begin{itemize}
+\item \textbf{Exact naming match required}: Build parameter, folder name, and main file name must be identical
+\item \textbf{Platform support mandatory}: Each application must explicitly declare supported platforms
+\item \textbf{Configuration completeness}: Missing configuration elements cause build failures
+\item \textbf{Reference implementations valuable}: Existing applications provide proven configuration patterns
+\end{itemize}
+
+\subsection{Recommendations}
+
+\begin{itemize}
+\item \textbf{Follow naming conventions strictly}: Avoid any deviation from established patterns
+\item \textbf{Use incremental development}: Make small changes and test frequently
+\item \textbf{Reference working examples}: Base new applications on proven implementations
+\item \textbf{Document configurations thoroughly}: Maintain clear documentation of application requirements
+\end{itemize}
+
+This analysis provides a foundation for understanding CAmkES build system requirements and avoiding common configuration pitfalls in future development efforts.
+
+\end{document}

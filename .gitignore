@@ -40,3 +40,15 @@ freertos_vexpress_a9/
 
 # VM manifest
 vm_freertos_manifest/
+
+# FreeRTOS directories
+FreeRTOS/
+
+# FreeRTOS QEMU experimant
+freertos_qemu/
+
+# FreeRTOS KVM setup
+linux_kvm_setup/
+
+# FreeRTOS nested virtualization
+nested-virt/
