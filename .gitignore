@@ -56,3 +56,6 @@ nested-virt/
 linux_vm_comparison/
 
 linux_images/
+
+# OpenPLC
+OpenPLC_v3/
