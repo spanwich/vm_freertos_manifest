@@ -7,7 +7,7 @@
   <remote name="lwip" fetch="https://git.savannah.gnu.org/git/"/>
   <remote name="picotcp" fetch="https://github.com/tass-belgium"/>
   <remote name="polly" fetch="https://github.com/ruslo"/>
-  <remote name="seL4" fetch="../seL4"/>
+  <remote name="seL4" fetch="https://github.com/seL4"/>
   <remote name="zeromq" fetch="https://github.com/zeromq"/>
   <remote name="spanwich" fetch="https://github.com/spanwich"/>
   
@@ -29,6 +29,14 @@
 
   <!-- FreeRTOS source for ARM Cortex-A9 vExpress platform -->
   <project name="freertos_vexpress_a9.git" path="freertos_vexpress_a9" 
+           remote="spanwich" revision="main" upstream="main" dest-branch="main"/>
+           
+  <!-- Standalone FreeRTOS QEMU test project -->
+  <project name="freertos_qemu.git" path="freertos_qemu" 
+           remote="spanwich" revision="main" upstream="main" dest-branch="main"/>
+           
+  <!-- PhD research documentation and analysis -->
+  <project name="phd-research-docs.git" path="research-docs" 
            remote="spanwich" revision="main" upstream="main" dest-branch="main"/>
   
   <!-- VM Images and Linux -->
