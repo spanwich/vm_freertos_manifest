@@ -18,8 +18,8 @@
     <linkfile src="docs/index.md" dest="camkes-vm-examples/camkes_README.md"/>
   </project>
   
-  <!-- VM Examples - using upstream but will override vm_freertos -->
-  <project name="camkes-vm-examples.git" path="camkes-vm-examples/projects/vm-examples" revision="3457f046925b0e9bad68b1f85d71c2302e3aa070" upstream="master" dest-branch="master">
+  <!-- VM Examples - using your fork with Claude Code build improvements -->
+  <project name="camkes-vm-examples.git" path="camkes-vm-examples/projects/vm-examples" remote="spanwich" revision="master" upstream="master" dest-branch="master">
     <linkfile src="easy-settings.cmake" dest="camkes-vm-examples/easy-settings.cmake"/>
   </project>
   
