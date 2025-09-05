@@ -34,10 +34,6 @@
   <!-- Standalone FreeRTOS QEMU test project -->
   <project name="freertos-qemu-research.git" path="freertos_qemu" 
            remote="spanwich" revision="main" upstream="main" dest-branch="main"/>
-           
-  <!-- PhD research documentation and analysis -->
-  <project name="phd-research-docs.git" path="research-docs" 
-           remote="spanwich" revision="main" upstream="main" dest-branch="main"/>
   
   <!-- VM Images and Linux -->
   <project name="camkes-vm-images.git" path="camkes-vm-examples/projects/camkes-vm-images" revision="bafad64282c14d0bbf15468bfd6265e648d87d6c" upstream="master" dest-branch="master"/>
