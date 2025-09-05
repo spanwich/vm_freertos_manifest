@@ -59,3 +59,6 @@ linux_images/
 
 # OpenPLC
 OpenPLC_v3/
+
+# OpenPLC test lab QEMU images
+openplc-test-lab

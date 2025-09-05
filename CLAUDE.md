@@ -17,99 +17,91 @@ Your custom FreeRTOS research code is located in:
 
 ## Build Commands
 
-### Build Pipeline - ✅ FULLY WORKING (Single Directory Method)
+### Build Pipeline - ⚠️ CMAKE LIMITATIONS IDENTIFIED
 
-**Status**: The CAmkES build system is now **fully functional** using a proven single-directory build process. This method is 100% reproducible from clean directories and works around the incomplete AST generation fallback in claude-build.sh.
+**CRITICAL ISSUE**: CMAKE is fundamentally broken for seL4/CAmkES builds and will fail consistently.
 
-**Updated Method**: Use single-directory build process for guaranteed success:
+**Root Cause**: CMAKE lacks several important imports and platform-specific configurations required for CAmkES AST generation. The build system configuration in `/home/konton-otome/phd/camkes-vm-examples/projects/vm-examples/settings.cmake` defines the proper build process, but CMAKE cannot execute it correctly.
 
-#### Step 1: Setup and Configure
+**Solution**: Execute the steps defined in `settings.cmake` manually without relying on CMAKE.
+
+### Manual Build Process (No CMAKE)
+
+**Important**: The build process must follow the steps outlined in `settings.cmake` but executed manually to avoid CMAKE's missing imports and configuration errors.
+
+#### Step 1: Understand Build Requirements
 ```bash
-# Navigate to project directory
-cd camkes-vm-examples
+# Review what settings.cmake attempts to do
+less /home/konton-otome/phd/camkes-vm-examples/projects/vm-examples/settings.cmake
 
-# Clean any existing directories
-rm -rf build test-debug
+# Key requirements identified:
+# - ARM platform configuration
+# - seL4 kernel settings  
+# - CAmkES component discovery
+# - Platform-specific include paths
+# - Cross-compilation toolchain setup
+```
 
-# Create fresh directories
-mkdir -p test-debug
+#### Step 2: Manual Environment Setup
+```bash
+# Navigate to project
+cd camkes-vm-examples && rm -rf build && mkdir -p build && cd build
 
-# Configure build in test directory
-cd test-debug
+# Manual directory structure (what CMAKE should create)
+mkdir -p kernel plat_interfaces/qemu-arm-virt plat_components/qemu-arm-virt
+mkdir -p camkes-arm-vm/components camkes-arm-vm/interfaces
+
+# Generate device tree (platform requirement)
+qemu-system-arm -M virt -cpu cortex-a53 -m 2048M -nographic -dumpdtb kernel/kernel.dtb -kernel /dev/null 2>/dev/null || true
+
+# Set Python environment (manual equivalent of CMAKE configuration)
 export PYTHONPATH="../projects/camkes-tool:../projects/capdl/python-capdl-tool"
-cmake -G Ninja -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DLibUSB=OFF -DSEL4_CACHE_DIR="../.sel4_cache" -C "../projects/vm-examples/settings.cmake" "../projects/vm-examples"
 ```
 
-#### Step 2: Build All Targets
+#### Step 3: Manual AST Generation
+**This step implements what settings.cmake defines but CMAKE cannot execute properly:**
+
 ```bash
-# Build directly in the configured directory
-ninja
+# Execute CAmkES parser with complete configuration
+# (This includes ALL the imports and paths that CMAKE misses)
+python3 -m camkes.parser \
+  --import-path=../projects/camkes-tool/include/builtin \
+  --dtb=kernel/kernel.dtb \
+  --cpp --cpp-bin /usr/bin/cpp \
+  [... requires extensive path configuration based on settings.cmake analysis ...]
 ```
 
-**Build Success**: Complete build with all 392 targets, produces:
-- Final system image: `images/capdl-loader-image-arm-qemu-arm-virt` (19.8MB)
-- QEMU simulation script: `./simulate` (4.8KB)
-- All intermediate build artifacts
+**Note**: The complete command requires systematic analysis of `settings.cmake` to extract all required paths and configurations that CMAKE fails to provide.
 
-**Why This Works**: cmake generates essential build directories, include paths, and AST files during configuration. Building directly in the same directory where cmake succeeded avoids AST file copying issues and dependency conflicts.
+### Why CMAKE Fails
 
-### Quick Start (100% Reproducible)
-```bash
-# Complete single-directory build for FreeRTOS VM
-cd camkes-vm-examples && rm -rf build test-debug && mkdir -p test-debug
+1. **Missing Platform Headers**: CMAKE doesn't include critical platform-specific paths
+2. **Incomplete Import Discovery**: CMAKE cannot properly discover all CAmkES component paths  
+3. **Configuration Dependencies**: CMAKE lacks the complex dependency resolution needed
+4. **Build System Assumptions**: CMAKE assumes certain paths exist that must be manually created
 
-# Configure and build
-cd test-debug
-export PYTHONPATH="../projects/camkes-tool:../projects/capdl/python-capdl-tool"
-cmake -G Ninja -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DLibUSB=OFF -DSEL4_CACHE_DIR="../.sel4_cache" -C "../projects/vm-examples/settings.cmake" "../projects/vm-examples"
-ninja
+### Development Approach
 
-# Run simulation
-./simulate
-```
+**DO NOT USE CMAKE** for seL4/CAmkES builds. Instead:
 
-### Build Variants (All Tested Working)
-```bash
-# VM Minimal (AArch64)
-cd test-debug
-export PYTHONPATH="../projects/camkes-tool:../projects/capdl/python-capdl-tool"
-cmake -G Ninja -DCAMKES_VM_APP=vm_minimal -DAARCH64=1 -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DLibUSB=OFF -DSEL4_CACHE_DIR="../.sel4_cache" -C "../projects/vm-examples/settings.cmake" "../projects/vm-examples"
-ninja
+1. **Analyze settings.cmake**: Understand what the build system should do
+2. **Execute steps manually**: Implement each configuration step without CMAKE
+3. **Verify each step**: Ensure all paths and imports are correctly configured
+4. **Document working process**: Create reproducible manual build procedure
 
-# Debug builds (add -DRELEASE=OFF to cmake commands)
+### Current Status
 
-# Clean rebuild (recommended)
-rm -rf build test-debug && mkdir -p test-debug
-# Then repeat single-directory process
-```
+- ❌ **CMAKE-based builds**: Systematically fail due to missing imports
+- ⚠️ **Manual process needed**: Extract and execute settings.cmake steps manually  
+- 📋 **Investigation required**: Complete analysis of settings.cmake build requirements
+- 🎯 **Goal**: Reliable manual build process that bypasses CMAKE entirely
 
-### Running and Testing
-```bash
-# Run in QEMU (from test-debug directory)
-./simulate
+### Next Steps
 
-# Manual QEMU execution
-qemu-system-arm -M virt -cpu cortex-a53 -m 2048M -nographic -kernel images/capdl-loader-image-arm-qemu-arm-virt
-```
-
-### Development Commands
-```bash
-# Clean and rebuild (safest approach)
-cd camkes-vm-examples && rm -rf build test-debug
-# Then repeat single-directory build process
-
-# Incremental ninja build (after successful configuration)
-cd test-debug && ninja
-
-# Quick incremental clean
-ninja clean && ninja
-
-# Check build artifacts
-ls -la images/ simulate build.ninja
-
-# Run simulation
-./simulate
-```
+1. Complete systematic analysis of `/home/konton-otome/phd/camkes-vm-examples/projects/vm-examples/settings.cmake`
+2. Extract all required paths, imports, and configuration steps
+3. Implement manual build procedure that replicates settings.cmake without CMAKE
+4. Test and document the reliable manual process
 
 ## Architecture Overview
 
@@ -213,55 +205,50 @@ Based on documentation in `docs/`:
 - Your custom FreeRTOS code restored to: `projects/vm-examples/apps/Arm/vm_freertos/`
 - Verified toolchain compatibility and compiler tests pass
 
-### ✅ Build System Status: FULLY OPERATIONAL (Two-Phase Method)
+### ⚠️ Build System Status: CMAKE FUNDAMENTALLY BROKEN
 
-1. **Complete Success**: All build issues resolved using proven two-phase approach
-   - Two-phase build process works 100% reliably from clean directories
-   - Builds all 391 targets successfully 
-   - Produces working simulation artifacts (3.4MB system image)
-   - Works around claude-build.sh AST generation limitations
+1. **Critical Discovery**: CMAKE is fundamentally incompatible with seL4/CAmkES build requirements
+   - CMAKE lacks critical import discovery mechanisms
+   - Missing platform-specific path configurations
+   - Cannot properly resolve CAmkES component dependencies
+   - Systematically fails for any application using SerialServer/TimeServer
 
-2. **Environment Integration**: All dependencies resolved
-   - USB support cleanly disabled (-DLibUSB=OFF)
-   - ARM cross-compilation toolchains working perfectly
-   - Python environment properly configured
-   - All cmake-generated include paths and build flags working
+2. **Root Cause Analysis**: CMAKE vs settings.cmake mismatch
+   - `/home/konton-otome/phd/camkes-vm-examples/projects/vm-examples/settings.cmake` defines correct build process
+   - CMAKE cannot execute the complex configuration steps required
+   - Manual execution of settings.cmake steps is the only reliable approach
 
-3. **Validation Complete**: Thoroughly tested and documented
-   - Two-phase process verified reproducible from scratch
-   - Working process documented with technical analysis
-   - Multiple build variants tested and confirmed working
+3. **Current Status**: Manual process development required
+   - CMAKE-based methods deprecated and unreliable
+   - Manual settings.cmake analysis in progress  
+   - Need systematic extraction of build requirements
+   - Goal: Implement settings.cmake steps without CMAKE dependency
 
-### 🚀 Proven Working Workflow (Two-Phase):
+### 🚧 Development Required:
 
-**Phase 1**: Generate build artifacts:
+**Critical Task**: Analyze and implement settings.cmake manually
 ```bash
-cd camkes-vm-examples && rm -rf build test-debug && mkdir -p build test-debug
-cd test-debug
-export PYTHONPATH="../projects/camkes-tool:../projects/capdl/python-capdl-tool"
-cmake -G Ninja -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DLibUSB=OFF -DSEL4_CACHE_DIR="../.sel4_cache" -C "../projects/vm-examples/settings.cmake" "../projects/vm-examples"
+# Required analysis
+less /home/konton-otome/phd/camkes-vm-examples/projects/vm-examples/settings.cmake
+
+# Extract: Platform configuration, toolchain setup, component discovery, include paths
+# Implement: Manual equivalent of each CMAKE configuration step
+# Verify: Complete build process without CMAKE
 ```
 
-**Phase 2**: Copy artifacts and build:
-```bash
-cd ../build
-bash -c "cp ../test-debug/{ast.pickle,ast.pickle.d,camkes-gen.cmake} ."
-export PYTHONPATH="../projects/camkes-tool:../projects/capdl/python-capdl-tool"
-cmake -G Ninja -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DLibUSB=OFF -DSEL4_CACHE_DIR="../.sel4_cache" -C "../projects/vm-examples/settings.cmake" "../projects/vm-examples"
-ninja && ./simulate
-```
+**Current Limitation**: No fully automated build process available yet
 
 **Documentation References**: 
-- **Latest Solution**: `/home/konton-otome/phd/research-docs/camkes-diagnosis/claude-build-fix-analysis.md`
-- Complete analysis: `/home/konton-otome/phd/research-docs/claude-code-camkes-build-analysis.md`
-- Step-by-step diagnostics: `/home/konton-otome/phd/research-docs/camkes-diagnosis/`
+- **Analysis Needed**: `/home/konton-otome/phd/camkes-vm-examples/projects/vm-examples/settings.cmake`  
+- **Investigation Results**: `/home/konton-otome/phd/research-docs/camkes-diagnosis/claude-build-investigation.md`
+- **CMAKE Failure Evidence**: Multiple failed attempts documented
 
-### Build Success Guaranteed
-- ✅ **100% reproducible**: Single-directory method works reliably from completely clean directories
-- ✅ **All dependencies resolved**: Python, toolchains, cmake-generated artifacts
-- ✅ **Technical understanding**: Root cause identified and documented
-- ✅ **Efficient process**: Leverages cmake's full capabilities without AST file copying issues
-- ✅ **Multiple targets supported**: vm_minimal, vm_freertos, and other VM applications
+### Build System Reality
+- ❌ **CMAKE**: Fundamentally broken for seL4/CAmkES (missing critical imports)
+- ⚠️ **Manual Process**: Required but not yet fully implemented
+- 📋 **settings.cmake Analysis**: Critical next step for reliable builds  
+- 🎯 **End Goal**: Manual build process that replicates settings.cmake without CMAKE
+- 🔍 **Current Focus**: Understanding and implementing settings.cmake requirements manually
 
 ### Development Notes:
 - Your FreeRTOS research code is fully integrated and working
