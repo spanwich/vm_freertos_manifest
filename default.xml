@@ -32,7 +32,7 @@
            remote="spanwich" revision="master" upstream="master" dest-branch="master"/>
            
   <!-- Standalone FreeRTOS QEMU test project -->
-  <project name="freertos_qemu.git" path="freertos_qemu" 
+  <project name="freertos-qemu-research.git" path="freertos_qemu" 
            remote="spanwich" revision="main" upstream="main" dest-branch="main"/>
            
   <!-- PhD research documentation and analysis -->
