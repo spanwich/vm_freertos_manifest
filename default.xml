@@ -66,7 +66,7 @@
   </project>
   
   <!-- Custom build script for Claude Code compatibility -->
-  <project name="phd.git" path="phd-scripts" remote="spanwich" revision="master" upstream="master" dest-branch="master">
+  <project name="phd.git" path="." remote="spanwich" revision="master" upstream="master" dest-branch="master">
     <linkfile src="claude-build.sh" dest="camkes-vm-examples/claude-build.sh"/>
   </project>
   <project name="sel4runtime" path="camkes-vm-examples/projects/sel4runtime" revision="86489cf6efab9f314964e79468c036e9035394c7" upstream="master" dest-branch="master"/>
