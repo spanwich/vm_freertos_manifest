@@ -33,7 +33,7 @@
            
   <!-- Standalone FreeRTOS QEMU test project -->
   <project name="freertos-qemu-research.git" path="freertos_qemu" 
-           remote="spanwich" revision="main" upstream="main" dest-branch="main"/>
+           remote="spanwich" revision="master" upstream="master" dest-branch="master"/>
   
   <!-- VM Images and Linux -->
   <project name="camkes-vm-images.git" path="camkes-vm-examples/projects/camkes-vm-images" revision="bafad64282c14d0bbf15468bfd6265e648d87d6c" upstream="master" dest-branch="master"/>
