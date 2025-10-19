@@ -32,6 +32,7 @@ sudo apt install -y \
     build-essential \
     git \
     device-tree-compiler \
+    libxml2-utils \
     python3 python3-pip python3-venv
 ```
 ### Install Haskell Stack
