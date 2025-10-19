@@ -31,6 +31,7 @@ sudo apt install -y \
     libcurl4-openssl-dev \
     build-essential \
     git \
+    device-tree-compiler \
     python3 python3-pip python3-venv
 ```
 ### Install Haskell Stack
