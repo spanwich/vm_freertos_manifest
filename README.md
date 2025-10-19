@@ -32,30 +32,38 @@ sudo apt install -y \
     build-essential \
     git \
     python3 python3-pip python3-venv
-
+```
 # Install Haskell Stack
+```bash
 curl -sSL https://get.haskellstack.org/ | sh
-
-# Install repo tool
+```
+### Install repo tool
+```bash
 curl https://storage.googleapis.com/git-repo-downloads/repo > repo
 chmod a+x repo
 sudo mv repo /usr/local/bin/
-
-# Set up Python environment
+```
+### Set up Python environment
+```bash
 python3 -m venv ~/phd/sel4-dev-env
 source ~/phd/sel4-dev-env/bin/activate
-
-# Create workspace and sync
+```
+### Create workspace and sync
+```bash
 mkdir -p ~/phd/camkes-vm-freertos-workspace && cd ~/phd/camkes-vm-freertos-workspace
 repo init -u https://github.com/spanwich/vm_freertos_manifest.git
 repo sync
+```
 
-# Install CAmkES Python dependencies
+### Install CAmkES Python dependencies
+```bash
 cd projects/camkes-tool/tools/python-deps
 pip install --editable .
 cd ../../../..
+```
 
-# Build and test
+### Build and test
+```bash
 mkdir build && cd build
 source ../../sel4-dev-env/bin/activate
 ../init-build.sh -DCAMKES_VM_APP=vm_freertos -DPLATFORM=qemu-arm-virt -DSIMULATION=1 -DLibUSB=OFF
